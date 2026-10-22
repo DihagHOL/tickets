@@ -17,8 +17,12 @@ import { personenwahl, leseAuswahl } from './personenwahl.js';
 
 const MAX_ANHANG = 3 * 1024 * 1024; // Graph sendMail: Anhänge direkt im Aufruf bis ~3 MB gesamt
 
+/** Bereiche mit eigenem Team (Queues mit Stichwort, z. B. SAP) – Auswahl im Melder-Formular. */
+const bereiche = () => zustand.queues.filter(q => q.aktiv && q.modus === 'Ticket' && q.stichwoerter.length);
+
 export async function zeige(main) {
   const queues = meineListen('bearbeiter').filter(l => l.queue.modus === 'Ticket');
+  const bs = bereiche();
   main.innerHTML = `
     <div class="seitenkopf"><h1>Neues Ticket</h1></div>
     ${queues.length ? `<div class="reiter" role="tablist">
@@ -27,6 +31,10 @@ export async function zeige(main) {
     </div>` : ''}
     <form class="karte formular" id="neu-mail" data-absenden="neu-mail">
       <p class="leise">Ihr Anliegen geht an das IT-Team. Sie bekommen gleich eine Eingangsbestätigung mit der Ticketnummer und sehen das Ticket danach unter „Meine Anfragen".</p>
+      ${bs.length ? `<fieldset class="block bereich"><legend>Worum geht es?</legend>
+        <label class="check"><input type="radio" name="bereich" value="" checked/> IT-Support (PC, Drucker, Zugänge, Software …)</label>
+        ${bs.map(q => `<label class="check"><input type="radio" name="bereich" value="${esc(q.stichwoerter[0])}"/> ${q.farbe ? `<span class="punkt" style="background:${q.farbe}"></span>` : ''}${esc(q.name)}</label>`).join('')}
+      </fieldset>` : ''}
       <label class="block">Betreff <span class="pflicht">*</span><input name="titel" required maxlength="200" placeholder="Kurz: Was ist das Problem?"/></label>
       <label class="block">Beschreibung <span class="pflicht">*</span><textarea name="text" rows="8" required placeholder="Was ist passiert? Seit wann? Welcher Rechner/welches Programm? Fehlermeldung?"></textarea></label>
       <label class="block">Anhänge (Screenshots, bis 3 MB gesamt)<input type="file" name="dateien" multiple data-aendern="neu-dateien"/></label>
@@ -63,7 +71,11 @@ aktion('neu-mail', async form => {
   const dateien = [...form.querySelector('[name=dateien]').files];
   if (dateien.reduce((s, f) => s + f.size, 0) > MAX_ANHANG) { meldung('Anhänge zusammen größer als 3 MB – bitte verkleinern oder später per Antwort nachreichen.', 'fehler'); return; }
   await beschaeftigt(form.querySelector('button.primaer'), 'Sende …', async () => {
-    const m = mailNeuesTicket({ titel: d.get('titel'), text: d.get('text'), dringend: d.get('dringend') === 'on' });
+    // Bereich (z. B. SAP) als Stichwort in den Betreff – daran erkennt der Flow die Queue.
+    const bereich = String(d.get('bereich') || '');
+    let titel = String(d.get('titel') || '').trim();
+    if (bereich && !titel.toLowerCase().includes(bereich.toLowerCase())) titel = `[${bereich}] ${titel}`;
+    const m = mailNeuesTicket({ titel, text: d.get('text'), dringend: d.get('dringend') === 'on' });
     const anhaenge = await Promise.all(dateien.map(async f => ({ name: f.name, typ: f.type, base64: await alsBase64(f) })));
     await sendeMail({ an: KONFIG.ticketPostfach, betreff: m.betreff, html: m.html, wichtigkeit: m.wichtigkeit, anhaenge });
   });

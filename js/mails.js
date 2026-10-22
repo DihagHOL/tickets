@@ -12,24 +12,35 @@ const RAHMEN = inhalt => `<div style="font-family:Segoe UI,Arial,sans-serif;font
 const knopf = (href, text) => `<p><a href="${esc(href)}" style="display:inline-block;padding:9px 18px;background:#17509e;color:#fff;border-radius:6px;text-decoration:none;font-weight:600">${esc(text)}</a></p>`;
 
 /** Bearbeiter → Melder: Antwort/Kommentar. Antworten gehen per Reply-To an das Ticketpostfach. */
-export function mailAntwortAnMelder({ nummer, titel, text, absender, appUrl = KONFIG.appUrl }) {
+export function mailAntwortAnMelder({ nummer, titel, text, absender, hinweis = '', appUrl = KONFIG.appUrl }) {
   return {
     betreff: betreffMitToken(nummer, titel),
     html: RAHMEN(`<p>Guten Tag,</p><p>zu Ihrem Ticket <strong>${esc(nummer)}</strong> („${esc(titel)}") gibt es eine Nachricht von ${esc(absender)}:</p>`
+      + (hinweis ? `<p style="color:#5f6b7a">${esc(hinweis)}</p>` : '')
       + `<blockquote style="margin:12px 0;padding:10px 14px;border-left:3px solid #17509e;background:#f4f7fb">${textZuHtml(text)}</blockquote>`
       + `<p>Sie können einfach auf diese Mail antworten.</p>` + knopf(ticketLink(appUrl, nummer), 'Ticket ansehen')),
   };
 }
 
 /** Statusänderung an den Melder (z. B. Erledigt). */
-export function mailStatusAnMelder({ nummer, titel, status, text = '', appUrl = KONFIG.appUrl }) {
+export function mailStatusAnMelder({ nummer, titel, status, text = '', hinweis = '', appUrl = KONFIG.appUrl }) {
   const satz = status === 'Erledigt'
     ? 'wurde als <strong>erledigt</strong> markiert. Falls das Problem weiter besteht, antworten Sie einfach auf diese Mail – das Ticket wird dann wieder geöffnet.'
     : `hat jetzt den Status <strong>${esc(status)}</strong>.`;
   return {
     betreff: betreffMitToken(nummer, titel),
     html: RAHMEN(`<p>Guten Tag,</p><p>Ihr Ticket <strong>${esc(nummer)}</strong> („${esc(titel)}") ${satz}</p>`
+      + (hinweis ? `<p style="color:#5f6b7a">${esc(hinweis)}</p>` : '')
       + (text ? `<blockquote style="margin:12px 0;padding:10px 14px;border-left:3px solid #17509e;background:#f4f7fb">${textZuHtml(text)}</blockquote>` : '')
+      + knopf(ticketLink(appUrl, nummer), 'Ticket ansehen')),
+  };
+}
+
+/** Melder: Sein Ticket wird mit einem anderen zusammen bearbeitet (Unterticket). */
+export function mailZusammengefuehrt({ nummer, titel, haupt, appUrl = KONFIG.appUrl }) {
+  return {
+    betreff: betreffMitToken(nummer, titel),
+    html: RAHMEN(`<p>Guten Tag,</p><p>Ihr Ticket <strong>${esc(nummer)}</strong> („${esc(titel)}") betrifft dasselbe Thema wie Ticket <strong>${esc(haupt)}</strong> und wird jetzt gemeinsam damit bearbeitet. Sie bekommen alle Neuigkeiten weiterhin zu Ihrem Ticket.</p>`
       + knopf(ticketLink(appUrl, nummer), 'Ticket ansehen')),
   };
 }

@@ -10,6 +10,8 @@ import { ok, gleich, ende } from './_pruef.mjs';
 import {
   bauDefinition, bauPaket, paketDateien, zip,
   AUSDRUCK_TICKETNUMMER, AUSDRUCK_DOMAIN_TREFFER, AUSDRUCK_STANDARD, AUSDRUCK_ANTWORTTEXT,
+  AUSDRUCK_WOERTER, AUSDRUCK_KENNUNGSLISTE, AUSDRUCK_NUMMER_WORT, AUSDRUCK_STICHWORT_TREFFER,
+  AUSDRUCK_STICHWORT_DOMAIN, AUSDRUCK_STICHWORT_OHNE_DOMAIN, AUSDRUCK_ZIEL, AUSDRUCK_WERK,
 } from '../scripts/flow-paket.mjs';
 import { tokenAusBetreff, queueFuerAbsender, queueAusFeldern, queueZuFeldern } from '../js/modell.js';
 
@@ -124,37 +126,77 @@ function auswerten(ausdruck, ctx) {
     empty: a => a == null || a === '' || (Array.isArray(a) && !a.length), coalesce: (...a) => a.find(x => x != null) ?? null,
     take: (a, n) => String(a).slice(0, n), decodeUriComponent: a => decodeURIComponent(a), join: (a, b) => a.join(b), length: a => a.length,
     greater: (a, b) => a > b, replace: (a, b, c) => String(a).split(b).join(c), int: a => { if (!/^\d+$/.test(String(a))) throw new Error('int'); return Number(a); },
+    isInt: a => /^[+-]?\d+$/.test(String(a)), lessOrEquals: (a, b) => a <= b,
   };
   const r = wert();
   return r;
 }
 
-// Ticketnummer: gleiche Ergebnisse wie tokenAusBetreff()
+// Die Ausdrücke im Paket sind genau die getesteten
+const ausdruck = name => { const a = alle.get(name).aktion; return a.inputs?.where || a.inputs; };
+ok(ausdruck('Woerter') === AUSDRUCK_WOERTER && ausdruck('Nummern_im_Betreff') === AUSDRUCK_NUMMER_WORT && ausdruck('Ziel') === AUSDRUCK_ZIEL, 'Paket nutzt die getesteten Ausdrücke');
+ok(alle.get('Stichwort_pruefen').aktion.runtimeConfiguration?.concurrency?.repetitions === 1, 'Stichwort-Schleife nacheinander (feste Reihenfolge)');
+
+// Ticketnummer: Flow (Kennungen → Wörter → Nummern → Ticketnummer) = tokenAusBetreff()
+const KENN = ['SCH', 'SHB', 'SAP', 'ALT'];
+function flowTicketnummer(betreff) {
+  const kennungsliste = auswerten(AUSDRUCK_KENNUNGSLISTE, { body: () => KENN });
+  const woerter = auswerten(AUSDRUCK_WOERTER, { outputs: () => betreff });
+  const nummern = woerter.filter(w => auswerten(AUSDRUCK_NUMMER_WORT, { item: () => w, outputs: () => kennungsliste }));
+  return auswerten(AUSDRUCK_TICKETNUMMER, { outputs: n => (n === 'Betreff' ? betreff : null), body: () => nummern });
+}
 const betreffs = [
   'AW: [#SCH-12] Eingangsbestätigung: Drucker', 'WG: [#ewa-3] x', 'AW: Neues Ticket: 1234 (Drucker)', 'Neues Ticket: 99',
   'Drucker kaputt', '', 'RE: AW: [#DIHAG-7] Eingangsbestätigung: [Wichtig] Server', '[#SCH-12]',
+  'Bezug SCH-12: Drucker', '(sap-7) noch offen?', 'COVID-19 Regeln', 'SCH-12-3 Teil', 'SCH-12a', 'SCH-1234567890',
+  '[#SHB-2] Re: SCH-12', 'Drucker [#] kaputt', 'AW: SCH-5, SAP-2', 'Neues Ticket: 12) x',
 ];
 for (const b of betreffs) {
-  const flow = auswerten(AUSDRUCK_TICKETNUMMER, { outputs: n => (n === 'Betreff' ? b : null) });
-  ok(flow === tokenAusBetreff(b), `Ticketnummer „${b}" → Flow ${JSON.stringify(flow)} = App ${JSON.stringify(tokenAusBetreff(b))}`);
+  const flow = flowTicketnummer(b);
+  ok(flow === tokenAusBetreff(b, 'ALT', KENN), `Ticketnummer „${b}" → Flow ${JSON.stringify(flow)} = App ${JSON.stringify(tokenAusBetreff(b, 'ALT', KENN))}`);
 }
 
-// Routing: gleiche Queue wie queueFuerAbsender() – mit Zeilen, wie „Elemente abrufen" sie liefert
+// Routing: Flow (Stichwort-Schleife, Filter, Ziel) = queueFuerAbsender() – mit Zeilen wie „Elemente abrufen"
 const queues = [
-  { Kennung: 'SCH', Domains: 'schmie-guss.de;sch-guss.de', Modus: 'Ticket', Standard: false, Aktiv: true },
-  { Kennung: 'DIHAG', Domains: 'dihag.com', Modus: 'Ticket', Standard: false, Aktiv: true },
-  { Kennung: 'ALLG', Domains: '', Modus: 'Ticket', Standard: true, Aktiv: true },
-  { Kennung: 'GIE', Domains: 'gienanth.com', Modus: 'Hinweis', Standard: false, Aktiv: true },
-  { Kennung: 'ALT', Domains: 'alt.de', Modus: 'Archiv', Standard: false, Aktiv: true },
-].map(z => queueZuFeldern(queueAusFeldern(z))).map(f => ({ ...f, Modus: { Value: f.Modus } }));
-for (const absender of ['a@schmie-guss.de', 'b@sch-guss.de', 'c@dihag.com', 'd@gienanth.com', 'e@alt.de', 'f@unbekannt.de', 'g@x.dihag.com']) {
+  { Id: 1, Kennung: 'SCH', Domains: 'schmie-guss.de;sch-guss.de', Modus: 'Ticket', Werk: 'SCH', Reihenfolge: 10 },
+  { Id: 2, Kennung: 'DIHAG', Domains: 'dihag.com', Modus: 'Ticket', Werk: 'DIHAG', Reihenfolge: 20 },
+  { Id: 3, Kennung: 'ALLG', Domains: '', Modus: 'Ticket', Standard: true, Werk: 'Kein', Reihenfolge: 90 },
+  { Id: 4, Kennung: 'GIE', Domains: 'gienanth.com', Modus: 'Hinweis', Reihenfolge: 30 },
+  { Id: 5, Kennung: 'ALT', Domains: 'alt.de', Modus: 'Archiv', Stichwoerter: 'Altlast', Reihenfolge: 40 },
+  { Id: 6, Kennung: 'SAP', Domains: '', Stichwoerter: 'SAP;S/4HANA', Modus: 'Ticket', Werk: '', Reihenfolge: 5 },
+  { Id: 7, Kennung: 'SAPSCH', Domains: 'schmie-guss.de', Stichwoerter: 'SAP', Modus: 'Ticket', Werk: 'SCH', Reihenfolge: 6 },
+].map(z => ({ ...queueZuFeldern(queueAusFeldern(z)), Id: z.Id })).map(f => ({ ...f, Modus: { Value: f.Modus } }))
+  .sort((a, b) => a.Reihenfolge - b.Reihenfolge || a.Id - b.Id);  // $orderby=Reihenfolge
+function flowZiel(absender, betreff) {
   const domain = absender.split('@').pop();
-  const treffer = queues.filter(item => auswerten(AUSDRUCK_DOMAIN_TREFFER, { outputs: () => domain, item: () => item }));
-  const standard = queues.filter(item => auswerten(AUSDRUCK_STANDARD, { item: () => item }));
-  const flow = (treffer[0] || standard[0])?.Kennung;
-  const app = queueFuerAbsender(queues.map(f => queueAusFeldern({ ...f, Modus: f.Modus.Value })), absender)?.kennung;
-  ok(flow === app, `Routing ${absender}: Flow ${flow} = App ${app}`);
+  const out = n => ({ Betreff: betreff, Domain: domain }[n]);
+  const gemerkt = queues.filter(q => {
+    const treffer = q.Stichwoerter.split(';').filter(w => auswerten(AUSDRUCK_STICHWORT_TREFFER, { item: () => w, outputs: out }));
+    return treffer.length > 0 && q.Modus.Value !== 'Archiv';
+  });
+  const b = {
+    Stichwort_mit_Domain: gemerkt.filter(q => auswerten(AUSDRUCK_STICHWORT_DOMAIN, { item: () => q, outputs: out })),
+    Stichwort_ohne_Domain: gemerkt.filter(q => auswerten(AUSDRUCK_STICHWORT_OHNE_DOMAIN, { item: () => q })),
+    Queue_nach_Domain: queues.filter(q => auswerten(AUSDRUCK_DOMAIN_TREFFER, { outputs: out, item: () => q })),
+    Standard_Queue: queues.filter(q => auswerten(AUSDRUCK_STANDARD, { item: () => q })),
+  };
+  const ziel = auswerten(AUSDRUCK_ZIEL, { body: n => b[n] });
+  const werk = ziel ? auswerten(AUSDRUCK_WERK, { outputs: () => ziel, body: n => b[n] }) : '';
+  return { kennung: ziel?.Kennung, werk };
 }
+const appQueues = queues.map(f => queueAusFeldern({ ...f, Modus: f.Modus.Value }));
+const faelle = [
+  ['a@schmie-guss.de', 'Drucker'], ['b@sch-guss.de', ''], ['c@dihag.com', 'VPN'], ['d@gienanth.com', 'Hallo'], ['e@alt.de', 'Altlast'],
+  ['f@unbekannt.de', 'Frage'], ['g@x.dihag.com', 'x'], ['h@dihag.com', 'SAP Berechtigung'], ['i@schmie-guss.de', 'AW: sap transaktion'],
+  ['j@unbekannt.de', 'Problem mit S/4HANA'], ['k@gienanth.com', 'SAP-Frage'],
+];
+for (const [absender, betreff] of faelle) {
+  const flow = flowZiel(absender, betreff);
+  const app = queueFuerAbsender(appQueues, absender, betreff)?.kennung;
+  ok(flow.kennung === app, `Routing ${absender} „${betreff}": Flow ${flow.kennung} = App ${app}`);
+}
+gleich(flowZiel('h@dihag.com', 'SAP Berechtigung').werk, 'DIHAG', 'SAP für alle Werke: Werk kommt aus der Absender-Domain');
+gleich(flowZiel('i@schmie-guss.de', 'SAP').werk, 'SCH', 'Werk der Queue hat Vorrang');
 
 // Antworttext: zitierter Verlauf fällt weg
 const lf = '\n';

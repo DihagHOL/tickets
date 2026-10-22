@@ -5,12 +5,15 @@
  * Kein Anspruch auf Vollständigkeit: nur, was die App tatsächlich aufruft.
  */
 
+import { KONFIG_SPALTEN } from '../js/config.js';
+
 const G = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
-export const LISTEN = { konfig: G(1), sch: G(2), shb: G(3), alt: G(4), schIntern: G(5) };
+export const LISTEN = { konfig: G(1), sch: G(2), shb: G(3), alt: G(4), schIntern: G(5), sap: G(6) };
 
 const VOLL = { High: '2147483647', Low: '4294967295' };
 const BEARBEITUNG = { High: '432', Low: String(1 + 2 + 4 + 32 + 64 + 256 + 512 + 4096 + 65536 + 131072) };
 const LESEN = { High: '176', Low: '138612833' };
+const MITWIRKEN = { High: '432', Low: String(1 + 2 + 4 + 8 + 32 + 64 + 128 + 512 + 4096 + 65536 + 131072) };
 const KEINE = { High: '0', Low: '0' };
 
 export function neuerTenant() {
@@ -19,6 +22,8 @@ export function neuerTenant() {
     'anna.agent@dihag.com': { Id: 11, Title: 'Anna Agent' },
     'bert.bearbeiter@dihag.com': { Id: 13, Title: 'Bert Bearbeiter' },
     'max@schmie-guss.de': { Id: 12, Title: 'Max Melder' },
+    'eva@schmie-guss.de': { Id: 14, Title: 'Eva Engel' },
+    'sara.sap@dihag.com': { Id: 15, Title: 'Sara SAP' },
     'ticket@dihag.com': { Id: 20, Title: 'Ticket Postfach' },
   };
   const person = mail => ({ Id: nutzer[mail].Id, Title: nutzer[mail].Title, EMail: mail });
@@ -33,13 +38,15 @@ export function neuerTenant() {
     { InternalName: 'E_x002d_Mail_x002d_Adresse', Title: 'E-Mail-Adresse', TypeAsString: 'Text' },
     { InternalName: 'DateReported', Title: 'Gemeldet am', TypeAsString: 'DateTime' },
     { InternalName: 'Werk', Title: 'Werk', TypeAsString: 'Choice', Choices: ['DIHAG', 'SCH', 'SHB', 'Kein'] },
-    { InternalName: 'Kategorie', Title: 'Kategorie', TypeAsString: 'Choice', Choices: ['Hardware', 'Software'] },
+    { InternalName: 'Kategorie', Title: 'Kategorie', TypeAsString: 'Choice', Choices: ['Hardware', 'Software', 'SAP'] },
+    { InternalName: 'Hauptticket', Title: 'Hauptticket', TypeAsString: 'Text' },
   ];
   const item = (Id, t) => ({
     Id, Title: t.titel, Description: t.html || '<div><p>Beschreibung</p></div>', Status: t.status || 'Neu', Priority: t.prio || 'Normal',
     Assignedto0: (t.bearbeiter || []).map(person), Issueloggedby: t.melder ? person(t.melder) : null,
     E_x002d_Mail_x002d_Adresse: t.melder || '', DateReported: tag(t.alter ?? 1), Created: tag(t.alter ?? 1), Modified: tag((t.alter ?? 1) / 2),
     Werk: t.werk || 'SCH', Kategorie: t.kategorie || 'Hardware', Attachments: !!t.anhang, Author: person(t.autor || t.melder || 'ticket@dihag.com'),
+    Hauptticket: t.haupt || null,
   });
   const konfigZeile = (Id, f) => ({ Id, ID: Id, Aktiv: true, Standard: false, Benachrichtigen: false, Reihenfolge: Id * 10, Domains: '', Bearbeiter: '', Hinweistext: '', ListenUrl: '', ...f });
 
@@ -51,6 +58,7 @@ export function neuerTenant() {
       'Ticket Besitzer': { Id: 3, mitglieder: ['admin@dihag.com'] },
       'Tickets SCH – Bearbeiter': { Id: 30, mitglieder: ['anna.agent@dihag.com', 'bert.bearbeiter@dihag.com'] },
       'Tickets SHB – Bearbeiter': { Id: 31, mitglieder: [] },
+      'Tickets SAP – Bearbeiter': { Id: 32, mitglieder: ['sara.sap@dihag.com'] },
     },
     rollen: [
       { Id: 1073741829, Name: 'Vollzugriff', RoleTypeKind: 5, BasePermissions: VOLL },
@@ -65,6 +73,7 @@ export function neuerTenant() {
           konfigZeile(2, { Title: 'Werk SHB', Kennung: 'SHB', ListenName: 'Tickets-SHB', ListenId: LISTEN.shb, Domains: 'shb-guss.de', Werk: 'SHB', Gruppe: 'Tickets SHB – Bearbeiter', Modus: 'Ticket', Standard: true }),
           konfigZeile(3, { Title: 'Gienanth (Hinweis)', Kennung: 'GIE', Domains: 'gienanth.com', Modus: 'Hinweis', Hinweistext: 'Bitte it-support@… verwenden' }),
           konfigZeile(4, { Title: 'Archiv (bisherige Liste)', Kennung: 'ALT', ListenName: 'Tickets', ListenId: LISTEN.alt, Modus: 'Archiv', Gruppe: '*' }),
+          konfigZeile(5, { Title: 'SAP', Kennung: 'SAP', ListenName: 'Tickets-SAP', ListenId: LISTEN.sap, Stichwoerter: 'SAP', Kategorie: 'SAP', Farbe: '#0070F2', Gruppe: 'Tickets SAP – Bearbeiter', Modus: 'Ticket', Reihenfolge: 1 }),
         ],
       },
       [LISTEN.sch]: {
@@ -79,9 +88,15 @@ export function neuerTenant() {
           item(2, { titel: 'VPN-Zugang für neuen Kollegen', melder: 'max@schmie-guss.de', alter: 0.2, bearbeiter: ['anna.agent@dihag.com'], status: 'In Bearbeitung' }),
           item(3, { titel: 'Outlook stürzt ab', melder: 'bert.bearbeiter@dihag.com', alter: 10, status: 'Erledigt' }),
           item(4, { titel: 'SAP-Berechtigung Einkauf', melder: 'max@schmie-guss.de', alter: 0.5, prio: 'Kritisch' }),
+          item(5, { titel: 'Drucker Halle 2 druckt nicht mehr', melder: 'eva@schmie-guss.de', alter: 1 }),
         ],
         kommentare: { 1: [{ id: 1, text: 'Wir schauen uns das an.', createdDate: tag(2), author: { name: 'Anna Agent', email: 'anna.agent@dihag.com' } }] },
         anhaenge: { 1: [{ FileName: 'foto.jpg', ServerRelativeUrl: '/sites/ticket/Lists/TicketsSCH/Attachments/1/foto.jpg' }] },
+      },
+      [LISTEN.sap]: {
+        Title: 'Tickets-SAP', felder: felderTickets, ReadSecurity: 2, WriteSecurity: 2, NoCrawl: true, EnableVersioning: true, EnableAttachments: true, HasUniqueRoleAssignments: true,
+        rechte: { 'Tickets SAP – Bearbeiter': 'bearbeitung', 'Tickets SCH – Bearbeiter': 'mitwirken', melder: 'lesen' },
+        zuweisungen: [], items: [],
       },
       [LISTEN.shb]: {
         Title: 'Tickets-SHB', felder: felderTickets, ReadSecurity: 1, WriteSecurity: 1, NoCrawl: false, EnableVersioning: true, EnableAttachments: true, HasUniqueRoleAssignments: false,
@@ -107,8 +122,10 @@ export function neuerTenant() {
 function maske(t, liste, mail) {
   if (t.gruppen['Ticket Besitzer'].mitglieder.includes(mail)) return VOLL;
   if (mail === 'ticket@dihag.com') return VOLL;
-  for (const [g, r] of Object.entries(liste.rechte || {})) {
-    if (g !== 'melder' && t.gruppen[g]?.mitglieder.includes(mail)) return r === 'bearbeitung' ? BEARBEITUNG : LESEN;
+  for (const r of ['bearbeitung', 'mitwirken', 'lesen']) {
+    for (const [g, rr] of Object.entries(liste.rechte || {})) {
+      if (g !== 'melder' && rr === r && t.gruppen[g]?.mitglieder.includes(mail)) return { bearbeitung: BEARBEITUNG, mitwirken: MITWIRKEN, lesen: LESEN }[r];
+    }
   }
   return liste.rechte?.melder ? LESEN : null;
 }
@@ -135,6 +152,7 @@ export function beantworte(t, ich, method, urlText, body) {
       const such = (q.get('$filter') || '').match(/startswith\(displayName,'([^']*)'\)/)?.[1]?.toLowerCase() || '';
       return json({ value: Object.entries(t.nutzer).filter(([m, u]) => u.Title.toLowerCase().startsWith(such) || m.startsWith(such)).map(([m, u]) => ({ displayName: u.Title, mail: m })) });
     }
+    if (/^\/v1\.0\/sites\/[^/]+\/lists\/[0-9a-f-]+\/columns$/.test(pfad)) return json({ value: [{ name: 'Title' }, ...KONFIG_SPALTEN.map(c => ({ name: c.name }))] });
     const m = pfad.match(/^\/v1\.0\/sites\/[^/]+\/lists\/([0-9a-f-]+)\/items$/);
     if (m && method === 'POST') {
       const l = t.listen[m[1]];
@@ -163,7 +181,7 @@ export function beantworte(t, ich, method, urlText, body) {
     const rest = m[2];
     const mk = maske(t, l, ich);
     if (!mk) return verboten();
-    const nurEigene = mk === LESEN && l.ReadSecurity === 2;
+    const nurEigene = (mk === LESEN || mk === MITWIRKEN) && l.ReadSecurity === 2;
     const sichtbar = i => !nurEigene || i.Author?.EMail === ich;
     if (rest === '/EffectiveBasePermissions') return json(mk);
     if (rest === '') return json({ HasUniqueRoleAssignments: l.HasUniqueRoleAssignments, ListItemEntityTypeFullName: 'SP.Data.' + l.Title + 'ListItem', Title: l.Title });
@@ -172,14 +190,23 @@ export function beantworte(t, ich, method, urlText, body) {
       let items = l.items.filter(sichtbar);
       const f = (q.get('$filter') || '').match(/TicketId eq (\d+)/);
       if (f) items = items.filter(i => i.TicketId === Number(f[1]));
+      const h = (q.get('$filter') || '').match(/Hauptticket eq '([^']+)'/);
+      if (h) items = items.filter(i => i.Hauptticket === h[1]);
       return json({ value: items });
+    }
+    if (rest === '/items' && method === 'POST') {
+      if (![VOLL, BEARBEITUNG, MITWIRKEN].includes(mk)) return verboten();
+      const id = Math.max(0, ...l.items.map(i => i.Id)) + 1;
+      const { __metadata, __accept, ...werte } = body;
+      l.items.push({ Id: id, ...werte, Assignedto0: [], Issueloggedby: null, Created: new Date().toISOString(), Modified: new Date().toISOString(), Author: t.person(ich), Attachments: false });
+      return json({ d: { Id: id } }, 201);
     }
     if ((m = rest.match(/^\/items\((\d+)\)(.*)$/))) {
       const it = l.items.find(i => i.Id === Number(m[1]));
       if (!it || !sichtbar(it)) return nicht('Element fehlt');
       if (m[2] === '') return json(it);
       if (m[2] === '/ValidateUpdateListItem') {
-        if (mk !== VOLL && mk !== BEARBEITUNG) return verboten();
+        if (mk !== VOLL && mk !== BEARBEITUNG && !(mk === MITWIRKEN && it.Author?.EMail === ich && !body.formValues.some(f => f.FieldName === 'Author'))) return verboten();
         for (const fv of body.formValues) {
           if (/Assignedto0|Issueloggedby|Author/.test(fv.FieldName)) {
             const leute = JSON.parse(fv.FieldValue).map(k => k.Key.split('|').pop()).filter(x => t.nutzer[x]).map(t.person);
@@ -195,6 +222,8 @@ export function beantworte(t, ich, method, urlText, body) {
       l.kommentare ||= {};
       if (method === 'POST') {
         if (mk === LESEN) return verboten();
+        const ziel = l.items.find(i => i.Id === Number(m[1]));
+        if (mk === MITWIRKEN && ziel?.Author?.EMail !== ich) return verboten();
         (l.kommentare[m[1]] ||= []).push({ id: Date.now(), text: body.text, createdDate: new Date().toISOString(), author: { name: t.nutzer[ich].Title, email: ich } });
         return json({}, 201);
       }

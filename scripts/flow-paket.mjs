@@ -11,10 +11,11 @@
  * Ablauf je Mail an das Ticketpostfach:
  *   1. Schleifenschutz (eigene Mails, Abwesenheitsnotizen, Mailer-Daemon)
  *   2. Konfiguration laden
- *   3. Ticketnummer im Betreff ([#SCH-12] oder alt „Neues Ticket: 123")?
+ *   3. Ticketnummer im Betreff ([#SCH-12], „Bezug SCH-12" oder alt „Neues Ticket: 123")?
  *      → Antwort: als Kommentar anhängen, Anhänge ergänzen, Status wieder öffnen,
  *        Bearbeiter informieren
- *   4. Sonst neues Ticket: Queue nach Domain (sonst Standard), Modus „Hinweis" → nur
+ *   4. Sonst neues Ticket: Queue nach Stichwort im Betreff (z. B. SAP), sonst Domain, sonst
+ *      Standard; Modus „Hinweis" → nur
  *      Antwort-Mail; sonst Ticket anlegen, Werte/Personen setzen, „Erstellt von" =
  *      Melder, Original-Mail (.eml) + Anhänge anhängen, Eingangsbestätigung mit
  *      [#Nummer], optional Zuständige informieren
@@ -29,6 +30,7 @@ import path from 'path';
 import zlib from 'zlib';
 import { fileURLToPath } from 'url';
 import { KONFIG, siteUrl } from '../js/config.js';
+import { TRENNZEICHEN } from '../js/modell.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -96,12 +98,36 @@ const adminMail = (betreff, text) => outlook('SendEmailV2', {
 
 // ── Ausdrücke (gespiegelt aus js/modell.js) ──────────────────────────────────
 
-/** tokenAusBetreff(): [#KEN-12] → KEN-12; „Neues Ticket: 123" → ALT-123; sonst ''. */
+/** Betreff → Wörter in Großbuchstaben (Trennzeichen wie betreffWoerter() in js/modell.js). */
+export const AUSDRUCK_WOERTER = `@split(${TRENNZEICHEN.reduce((a, z) => `replace(${a}, '${z.replace(/'/g, "''")}', ' ')`, "toUpper(outputs('Betreff'))")}, ' ')`;
+
+/** Kennungen aller aktiven Queues als „;SCH;SAP;…;" (für den Vergleich ohne Schleife). */
+export const AUSDRUCK_KENNUNGSLISTE = "@concat(';', toUpper(join(body('Kennungen'), ';')), ';')";
+
+/** Ein Wort ist eine Ticketnummer, wenn es KENNUNG-ZAHL einer bekannten Queue ist. */
+export const AUSDRUCK_NUMMER_WORT = "@and(equals(length(split(item(), '-')), 2), not(equals(first(split(item(), '-')), '')), contains(outputs('Kennungsliste'), concat(';', first(split(item(), '-')), ';')), isInt(last(split(item(), '-'))), lessOrEquals(length(last(split(item(), '-'))), 9))";
+
+/**
+ * tokenAusBetreff(): [#KEN-12] → KEN-12; sonst bekannte Nummer im Betreff („Bezug SCH-12");
+ * sonst „Neues Ticket: 123" → ALT-123; sonst ''.
+ */
 export const AUSDRUCK_TICKETNUMMER = "@if(contains(outputs('Betreff'), '[#'), toUpper(trim(first(split(last(split(outputs('Betreff'), '[#')), ']')))), "
-  + `if(contains(outputs('Betreff'), 'Neues Ticket: '), concat('${KONFIG.archivKennung}-', first(split(trim(last(split(outputs('Betreff'), 'Neues Ticket: '))), ' '))), ''))`;
+  + "if(greater(length(body('Nummern_im_Betreff')), 0), first(body('Nummern_im_Betreff')), "
+  + `if(contains(outputs('Betreff'), 'Neues Ticket: '), concat('${KONFIG.archivKennung}-', first(split(trim(last(split(outputs('Betreff'), 'Neues Ticket: '))), ' '))), '')))`;
 
 /** queueFuerAbsender(): exakte Domain (ohne Archiv), Domains in der Liste mit ';' getrennt. */
-export const AUSDRUCK_DOMAIN_TREFFER = "@and(not(equals(item()?['Modus']?['Value'], 'Archiv')), contains(concat(';', toLower(coalesce(item()?['Domains'], '')), ';'), concat(';', outputs('Domain'), ';')))";
+export const AUSDRUCK_DOMAIN_TREFFER = "@and(not(equals(item()?['Modus']?['Value'], 'Archiv')), equals(coalesce(item()?['Stichwoerter'], ''), ''), contains(concat(';', toLower(coalesce(item()?['Domains'], '')), ';'), concat(';', outputs('Domain'), ';')))";
+/** Stichwort einer Queue kommt im Betreff vor (Groß-/Kleinschreibung egal). */
+export const AUSDRUCK_STICHWORT_TREFFER = "@and(not(equals(trim(item()), '')), contains(toLower(outputs('Betreff')), toLower(trim(item()))))";
+export const AUSDRUCK_STICHWORT_DOMAIN = "@and(not(equals(coalesce(item()?['Domains'], ''), '')), contains(concat(';', toLower(coalesce(item()?['Domains'], '')), ';'), concat(';', outputs('Domain'), ';')))";
+export const AUSDRUCK_STICHWORT_OHNE_DOMAIN = "@equals(coalesce(item()?['Domains'], ''), '')";
+/** Reihenfolge wie queueFuerAbsender(): Stichwort+Domain, Stichwort, Domain, Standard. */
+export const AUSDRUCK_ZIEL = "@if(greater(length(body('Stichwort_mit_Domain')), 0), first(body('Stichwort_mit_Domain')), "
+  + "if(greater(length(body('Stichwort_ohne_Domain')), 0), first(body('Stichwort_ohne_Domain')), "
+  + "if(greater(length(body('Queue_nach_Domain')), 0), first(body('Queue_nach_Domain')), "
+  + "if(greater(length(body('Standard_Queue')), 0), first(body('Standard_Queue')), null))))";
+/** Werk: das der Queue, sonst (z. B. SAP für alle Werke) das der Werk-Queue des Absenders. */
+export const AUSDRUCK_WERK = "@if(equals(coalesce(outputs('Ziel')?['Werk'], ''), ''), if(greater(length(body('Queue_nach_Domain')), 0), coalesce(first(body('Queue_nach_Domain'))?['Werk'], ''), ''), outputs('Ziel')?['Werk'])";
 export const AUSDRUCK_STANDARD = "@and(equals(item()?['Standard'], true), not(equals(item()?['Modus']?['Value'], 'Archiv')))";
 
 /** Antworttext ohne zitierten Verlauf, gekürzt (SharePoint-Kommentare sind begrenzt). */
@@ -177,9 +203,24 @@ function validate(name, werte, { item = ITEM_N, neueVersion = true, runAfter } =
 
 const neuZweig = kette([
   ['Domain', compose("@last(split(outputs('Absender'), '@'))")],
+  // Stichwort-Queues (z. B. SAP) sammeln – eine Schleife, weil eine Queue mehrere Stichwörter haben kann.
+  ['Stichwort_pruefen', {
+    type: 'Foreach',
+    foreach: "@outputs('Queues')",
+    runtimeConfiguration: { concurrency: { repetitions: 1 } },
+    actions: kette([
+      ['Stichwort_Treffer', { type: 'Query', inputs: { from: "@split(coalesce(items('Stichwort_pruefen')?['Stichwoerter'], ''), ';')", where: AUSDRUCK_STICHWORT_TREFFER } }],
+      ['Treffer_merken', wenn(
+        { and: [{ greater: ["@length(body('Stichwort_Treffer'))", 0] }, { not: { equals: ["@items('Stichwort_pruefen')?['Modus']?['Value']", 'Archiv'] } }] },
+        { Queue_merken: nach({ type: 'AppendToArrayVariable', inputs: { name: 'StichwortQueues', value: "@items('Stichwort_pruefen')" } }, {}) },
+      )],
+    ]),
+  }],
+  ['Stichwort_mit_Domain', { type: 'Query', inputs: { from: "@variables('StichwortQueues')", where: AUSDRUCK_STICHWORT_DOMAIN } }],
+  ['Stichwort_ohne_Domain', { type: 'Query', inputs: { from: "@variables('StichwortQueues')", where: AUSDRUCK_STICHWORT_OHNE_DOMAIN } }],
   ['Queue_nach_Domain', { type: 'Query', inputs: { from: "@outputs('Queues')", where: AUSDRUCK_DOMAIN_TREFFER } }],
   ['Standard_Queue', { type: 'Query', inputs: { from: "@outputs('Queues')", where: AUSDRUCK_STANDARD } }],
-  ['Ziel', compose("@if(greater(length(body('Queue_nach_Domain')), 0), first(body('Queue_nach_Domain')), if(greater(length(body('Standard_Queue')), 0), first(body('Standard_Queue')), null))")],
+  ['Ziel', compose(AUSDRUCK_ZIEL)],
   ['Keine_Queue', wenn(
     { equals: [`@empty(${Z})`, true] },
     kette([
@@ -227,8 +268,13 @@ const neuZweig = kette([
   )],
   ['Nummer', compose(`@concat(${Z}?['Kennung'], '-', outputs('Neue_Id'))`)],
   // Einzeln und fehlertolerant: Ein unbekannter Auswahlwert oder ein externer Melder soll das Ticket nicht verhindern.
-  ...validate('Status_Werk_setzen', [{ FieldName: 'Status', FieldValue: 'Neu' }, { FieldName: 'Werk', FieldValue: `@{${Z}?['Werk']}` }]),
-  ...validate('Prio_setzen', [{ FieldName: 'Priority', FieldValue: "@{if(equals(triggerOutputs()?['body/importance'], 'high'), 'Hoch', if(equals(triggerOutputs()?['body/importance'], 'low'), 'Niedrig', 'Normal'))}" }], { runAfter: egal('Status_Werk_setzen') }),
+  ['Werk_Wert', compose(AUSDRUCK_WERK)],
+  ...validate('Status_Werk_setzen', [{ FieldName: 'Status', FieldValue: 'Neu' }, { FieldName: 'Werk', FieldValue: "@{outputs('Werk_Wert')}" }]),
+  ['Kategorie_setzen', nach(wenn(
+    { not: { equals: [`@coalesce(${Z}?['Kategorie'], '')`, ''] } },
+    kette(validate('Kategorie_eintragen', [{ FieldName: 'Kategorie', FieldValue: `@{${Z}?['Kategorie']}` }])),
+  ), egal('Status_Werk_setzen'))],
+  ...validate('Prio_setzen', [{ FieldName: 'Priority', FieldValue: "@{if(equals(triggerOutputs()?['body/importance'], 'high'), 'Hoch', if(equals(triggerOutputs()?['body/importance'], 'low'), 'Niedrig', 'Normal'))}" }], { runAfter: egal('Kategorie_setzen') }),
   ['Zustaendige_setzen', nach(wenn(
     { not: { equals: [`@coalesce(${Z}?['Bearbeiter'], '')`, ''] } },
     kette(validate('Bearbeiter_eintragen', [{ FieldName: 'Assignedto0', FieldValue: personen(`${Z}?['Bearbeiter']`) }])),
@@ -281,6 +327,7 @@ export function bauDefinition() {
     ['Absender', compose("@toLower(trim(coalesce(triggerOutputs()?['body/from'], '')))")],
     ['Betreff', compose("@coalesce(triggerOutputs()?['body/subject'], '(ohne Betreff)')")],
     ['IstAntwort', { type: 'InitializeVariable', inputs: { variables: [{ name: 'IstAntwort', type: 'boolean', value: false }] } }],
+    ['StichwortQueues', { type: 'InitializeVariable', inputs: { variables: [{ name: 'StichwortQueues', type: 'array', value: [] }] } }],
     ['Schleifenschutz', wenn(
       {
         or: [
@@ -298,7 +345,7 @@ export function bauDefinition() {
       },
       { Ende_automatisch: nach(ende('Cancelled'), {}) },
     )],
-    ['Konfiguration_laden', sharepoint('GetItems', { table: KONFIG.konfigListe, $filter: 'Aktiv eq 1', $top: 500 })],
+    ['Konfiguration_laden', sharepoint('GetItems', { table: KONFIG.konfigListe, $filter: 'Aktiv eq 1', $orderby: 'Reihenfolge', $top: 500 })],
     ['Fehler_Konfiguration', {
       type: 'Scope',
       actions: kette([
@@ -308,6 +355,10 @@ export function bauDefinition() {
       runAfter: fehlschlag('Konfiguration_laden'),
     }],
     ['Queues', nach(compose("@body('Konfiguration_laden')?['value']"), ok('Konfiguration_laden'))],
+    ['Kennungen', { type: 'Select', inputs: { from: "@outputs('Queues')", select: "@coalesce(item()?['Kennung'], '')" } }],
+    ['Kennungsliste', compose(AUSDRUCK_KENNUNGSLISTE)],
+    ['Woerter', compose(AUSDRUCK_WOERTER)],
+    ['Nummern_im_Betreff', { type: 'Query', inputs: { from: "@outputs('Woerter')", where: AUSDRUCK_NUMMER_WORT } }],
     ['Ticketnummer', compose(AUSDRUCK_TICKETNUMMER)],
     ['Kennung', compose("@if(empty(outputs('Ticketnummer')), '', first(split(outputs('Ticketnummer'), '-')))")],
     ['TicketId', compose("@if(empty(outputs('Ticketnummer')), '', last(split(outputs('Ticketnummer'), '-')))")],

@@ -29,8 +29,9 @@ Nach dem Merge nach `main` ist die App unter `https://dfedorov12.github.io/ticke
 1. **Konfigurationsliste anlegen** – legt `TicketQueues` an (eine Zeile je Queue; der Flow liest sie).
 2. **Queues & Routing → „Startaufstellung wie bisheriger Flow"** – legt an:
 
-   | Kennung | Domain | Werk | Modus |
+   | Kennung | Erkennung | Werk | Modus |
    |---|---|---|---|
+   | **SAP** | Betreff enthält „SAP" – egal aus welchem Werk | aus der Absender-Domain | Ticket, eigenes SAP-Team, SAP-Blau |
    | DIHAG | dihag.com | DIHAG | Ticket |
    | SCH | schmie-guss.de | SCH | Ticket |
    | SHB | shb-guss.de | SHB | Ticket |
@@ -41,12 +42,14 @@ Nach dem Merge nach `main` ist die App unter `https://dfedorov12.github.io/ticke
    | GIE | gienanth.com | – | **Hinweis** (Antwort „bitte it-support@… nutzen", kein Ticket) |
    | ALT | – | – | **Archiv** = bisherige Liste `Tickets` |
 
-   Danach je Queue **Bearbeiten** → „Zuständig bei Eingang" eintragen (wie bisher im Flow fest verdrahtet). Namen, Kennungen, Domains frei anpassbar; **„Routing testen"** zeigt sofort, wohin eine Adresse ginge.
+   Danach je Queue **Bearbeiten** → „Zuständig bei Eingang" eintragen (wie bisher im Flow fest verdrahtet). Namen, Kennungen, Domains, **Stichwörter** (z. B. „SAP; S/4HANA") und Kennfarbe frei anpassbar. Eine Stichwort-Queue *mit* Domains gilt nur für diese Absender (z. B. SAP nur für ein Werk). **„Routing testen"** zeigt mit Absender und Betreff sofort, wohin eine Mail ginge.
 3. **Rechte & Einrichtung**
    1. *Berechtigungsstufe* „Ticket-Bearbeitung" anlegen (Knopf oben).
    2. Bei **ALT** zuerst **„Auswahlwerte"** – ergänzt in der Basisliste fehlende Status-/Prioritäts-/Werk-Werte. Die Queue-Listen übernehmen die Spalten von dort.
    3. Je Ticket-Queue **„Mitglieder …"** – die Bearbeiter in die Gruppe `Tickets XY – Bearbeiter` aufnehmen.
-   4. Je Ticket-Queue **„Einrichten"** – legt Liste `Tickets-XY` (Spalten aus `Tickets`), Notizliste `Tickets-XY-Intern`, Gruppe, Einstellungen und Berechtigungen an. Das Protokoll zeigt jeden Schritt; beliebig oft wiederholbar.
+   4. Je Ticket-Queue **„Einrichten"** – legt Liste `Tickets-XY` (Spalten aus `Tickets`, dazu die Spalte „Hauptticket"), Notizliste `Tickets-XY-Intern`, alle Bearbeiter-Gruppen, Einstellungen und Berechtigungen an. Das Protokoll zeigt jeden Schritt; beliebig oft wiederholbar.
+      Zum Soll gehört die **Übergabe**: Jede Bearbeiter-Gruppe darf in den anderen Queues Tickets *anlegen* (Recht „Mitwirken"), sieht dort aber dank „nur eigene Elemente" nichts außer dem, was sie selbst übergibt. So kann das Werk-Team einen SAP-Fall ans SAP-Team geben, ohne SAP-Tickets lesen zu können.
+      Kommt später eine Queue dazu, bei den bestehenden einmal **„Abgleichen"**, damit auch deren Gruppe übergeben darf.
    5. Zuletzt **ALT „Abgleichen"** – die bisherige Liste bekommt eigene Rechte: nur noch Admins, Flow-Konto und Bearbeiter (`*` = alle Bearbeiter-Gruppen; leer = nur Admins). **Ab hier sehen Melder die Alt-Liste nicht mehr.**
 4. **Migration (optional)** – je Queue die Alt-Tickets ihres Werks aus `Tickets` übernehmen (Vorschau → Übernehmen). Originale gehen in den Papierkorb (wiederherstellbar), die Tickets bekommen neue Nummern.
 
@@ -66,7 +69,9 @@ Nach dem Merge nach `main` ist die App unter `https://dfedorov12.github.io/ticke
    - Auf die Bestätigung antworten → Antwort steht im Verlauf, Bearbeiter bekommen eine Mail.
    - Mail von einer gienanth.com-Adresse → nur Hinweis-Mail, kein Ticket.
 
-**Was der Flow tut** (Details: `scripts/flow-paket.mjs`): Schleifenschutz → Konfiguration laden → Ticketnummer im Betreff? → *Antwort* (Kommentar, Anhänge, Status wieder öffnen, Bearbeiter informieren) oder *neues Ticket* (Queue nach Domain/Standard, Hinweis-Modus, Ticket anlegen, Status/Werk/Priorität/Zuständige/Melder setzen, **„Erstellt von" = Melder**, Original-Mail + Anhänge ans Ticket, Eingangsbestätigung). Fehler → Mail an administrator@dihag.com mit Link zum Lauf.
+**Was der Flow tut** (Details: `scripts/flow-paket.mjs`): Schleifenschutz → Konfiguration laden → **Ticketnummer im Betreff?** (`[#SCH-12]`, auch ohne Klammern wie „Bezug SCH-12", oder alt „Neues Ticket: 123") → *Antwort an das bestehende Ticket* (Kommentar, Anhänge, Status wieder öffnen, Bearbeiter informieren) oder *neues Ticket* (Queue nach **Stichwort im Betreff**, dann Domain, dann Standard; Hinweis-Modus; Ticket anlegen, Status/Werk/Kategorie/Priorität/Zuständige/Melder setzen, **„Erstellt von" = Melder**, Original-Mail + Anhänge ans Ticket, Eingangsbestätigung). Fehler → Mail an administrator@dihag.com mit Link zum Lauf.
+
+> Ein bereits importierter „Helpdesk v2" wird beim erneuten Import mit **„Aktualisieren"** ersetzt (statt „Als neu erstellen").
 
 > Das Flow-Konto ticket@dihag.com bekommt beim Einrichten **Vollzugriff auf die Ticketlisten** – nötig, um „Erstellt von" zu setzen und Antworten an fremde Tickets zu hängen.
 
@@ -122,7 +127,8 @@ SharePoint erlaubt Rechte-Abfragen app-only **nur mit Zertifikat** (ein Client-S
 
 - [ ] Redirect-URIs eingetragen (A)
 - [ ] Alle Ticket-Queues **eingerichtet**, Prüfung zeigt überall ✓ (B)
-- [ ] Bearbeiter-Gruppen gefüllt; jede Bearbeiterin sieht ihren Posteingang
+- [ ] Bearbeiter-Gruppen gefüllt (auch **SAP**); jede Bearbeiterin sieht ihren Posteingang
+- [ ] Routing-Test: Betreff mit „SAP" landet in SAP, sonst im Werk
 - [ ] Archiv ALT abgeglichen – Test mit einem Nicht-IT-Konto: `…/sites/ticket/Lists/Tickets` ist **nicht** mehr sichtbar
 - [ ] Flow v2 an, alter Flow aus; Test-Mail, Antwort, Hinweis-Domain geprüft (C)
 - [ ] Alte SharePoint-Ansichten, die bisher „versteckt" haben, können weg – sie schützen nichts
@@ -143,5 +149,8 @@ SharePoint erlaubt Rechte-Abfragen app-only **nur mit Zertifikat** (ein Client-S
 | Flow: „keine Queue für Absender" | keine Standard-Queue aktiv (Queues → Standard setzen) |
 | Flow: „Ticket konnte nicht angelegt werden" | Queue nicht eingerichtet (Liste/ListenUrl fehlt) oder ticket@ ohne Rechte → in der App „Abgleichen" |
 | Priorität bleibt leer | Auswahlwert fehlt in der Liste → „Auswahlwerte" in Rechte & Einrichtung |
+| Kategorie „SAP" fehlt | Auswahlwert „SAP" in der Spalte „Kategorie" ergänzen (die Spalte muss intern `Kategorie` heißen) |
+| „Zusammenführen" fehlt / Hinweis auf Spalte „Hauptticket" | Queue einmal „Abgleichen" – ergänzt die Spalte |
+| Übergabe bietet eine Queue nicht an | Dort fehlt das Übergabe-Recht → Ziel-Queue „Abgleichen" |
 | Nachtlauf: `Token (401)` | Zertifikat nicht hochgeladen/abgelaufen oder falsche Client-ID |
 | Nachtlauf: `SharePoint 403` | Sites.Selected-Freigabe (`fullcontrol`) für die Ticket-Site fehlt |

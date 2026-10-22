@@ -13,7 +13,7 @@ let auswahl = '';
 let _tickets = [];
 
 export async function zeige(main, route, aktuell) {
-  const listen = meineListen('bearbeiter').filter(l => l.queue.modus !== 'Archiv');
+  const listen = meineListen('bearbeiter');
   if (!listen.length) { main.innerHTML = leer('Berichte gibt es für Bearbeiter einer Queue.'); return; }
   main.innerHTML = `
     <div class="seitenkopf">
@@ -26,7 +26,7 @@ export async function zeige(main, route, aktuell) {
       </div>
     </div>
     <div id="b-inhalt">${ladeAnzeige('Lade Tickets …')}</div>`;
-  const { tickets } = await ladeAlle({ mindestens: 'bearbeiter' });
+  const { tickets } = await ladeAlle({ mindestens: 'bearbeiter', mitArchiv: true });
   if (!aktuell()) return;
   _tickets = tickets;
   zeichne();

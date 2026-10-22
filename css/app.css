@@ -109,6 +109,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--primaer); outlin
 .chip.klein { padding: 3px 9px; font-size: .8rem; }
 .zahl { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 999px; background: rgba(0, 0, 0, .07); font-size: .78rem; text-align: center; font-variant-numeric: tabular-nums; }
 .chip.aktiv .zahl { background: rgba(255, 255, 255, .2); }
+.chip .punkt { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
+.queue-pill { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 4px; font-size: .7rem; font-weight: 700; background: var(--grau-h); color: var(--leise); vertical-align: 1px; }
 .sichten { display: flex; gap: 2px; border-bottom: 1px solid var(--rand); margin-bottom: 14px; overflow-x: auto; }
 .sicht { border: none; background: none; font: inherit; font-weight: 600; color: var(--leise); padding: 9px 12px; border-bottom: 2px solid transparent; cursor: pointer; white-space: nowrap; }
 .sicht.aktiv { color: var(--primaer); border-bottom-color: var(--primaer); }
@@ -209,6 +211,18 @@ details.abgeschlossen summary h2 { display: inline-flex; }
 .formular-raster label:not(.check) { display: flex; flex-direction: column; gap: 4px; font-size: .88rem; font-weight: 600; }
 .formular-raster .breit { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 4px; font-size: .88rem; font-weight: 600; }
 .erfolg-box { text-align: center; padding: 20px; }
+fieldset.block { border: 1px solid var(--rand); border-radius: 8px; padding: 10px 14px; gap: 6px; }
+fieldset.block legend { font-weight: 600; padding: 0 4px; }
+.check .punkt { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+.checks { display: flex; flex-direction: column; gap: 4px; }
+.verknuepft-liste { list-style: none; margin: 6px 0 10px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.verknuepft { border: 1px solid var(--rand-2); border-radius: 8px; padding: 8px 10px; background: #fbfcfd; }
+.verknuepft .knopfzeile { margin-top: 4px; }
+.verknuepfung h2 { margin-bottom: 6px; }
+.duplikate { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 14px; }
+.duplikat { display: inline-flex; gap: 6px; align-items: center; }
+.eintrag.fremd { border-style: dashed; }
+.eintrag-kopf .badge { text-decoration: none; }
 
 /* Personenauswahl */
 .pw { display: flex; flex-direction: column; gap: 6px; font-weight: 400; }

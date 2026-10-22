@@ -33,12 +33,34 @@ export function parseTicketNummer(s) {
  *   „AW: Neues Ticket: 1234 (Drucker)" (alte Mails)  → ALT-1234
  * Sonst ''.
  */
-export function tokenAusBetreff(betreff, archivKennung = 'ALT') {
+export function tokenAusBetreff(betreff, archivKennung = 'ALT', kennungen = null) {
   const s = String(betreff ?? '');
-  const m = s.match(/\[#([A-Za-z][A-Za-z0-9]{1,9}-\d{1,9})\]/);
-  if (m) return m[1].toUpperCase();
-  const alt = s.match(/Neues Ticket:\s*(\d{1,9})\b/i);
-  return alt ? `${archivKennung}-${alt[1]}` : '';
+  // Genau wie der Flow (Aktion „Ticketnummer"): letztes „[#…]" gewinnt.
+  if (s.includes('[#')) return s.split('[#').pop().split(']')[0].trim().toUpperCase();
+  // Auch ohne Klammern: „Bezug SCH-12", „AW: SCH-12 Drucker" – nur bekannte Kennungen.
+  if (kennungen) {
+    const bekannt = new Set(kennungen.map(k => String(k).toUpperCase()));
+    const treffer = betreffWoerter(s).find(w => {
+      const teile = w.split('-');
+      return teile.length === 2 && teile[0] && bekannt.has(teile[0]) && /^\d{1,9}$/.test(teile[1]);
+    });
+    if (treffer) return treffer;
+  }
+  if (s.includes('Neues Ticket: ')) return `${archivKennung}-${s.split('Neues Ticket: ').pop().trim().split(' ')[0]}`;
+  return '';
+}
+
+/**
+ * Zeichen, die im Betreff als Worttrenner gelten – im Flow genauso (Ausdruck „Woerter").
+ * Bindestrich bewusst nicht: er gehört zur Nummer.
+ */
+export const TRENNZEICHEN = Object.freeze(['[', ']', '(', ')', ':', ',', ';', '#', '/', '"', "'", '.', '!', '?', '<', '>']);
+
+/** Betreff → Wörter in Großbuchstaben (Spiegel des Flow-Ausdrucks). */
+export function betreffWoerter(betreff) {
+  let s = String(betreff ?? '').toUpperCase();
+  for (const z of TRENNZEICHEN) s = s.split(z).join(' ');
+  return s.split(' ').filter(Boolean);
 }
 
 /** Betreff mit genau einem Token vorn: „[#SCH-12] Drucker". */
@@ -92,10 +114,28 @@ export function mailAusLogin(login) {
  * Standard-Queue; Archiv-Queues nehmen nie neue Tickets an.
  * Spiegelung im Flow: Aktion „Queue_nach_Domain" / „Standard_Queue".
  */
-export function queueFuerAbsender(queues, adresse) {
+export function queueFuerAbsender(queues, adresse, betreff = '') {
   const d = domainAus(adresse);
-  const kandidaten = (queues || []).filter(q => q.aktiv && q.modus !== 'Archiv');
-  return (d && kandidaten.find(q => q.domains.includes(d))) || kandidaten.find(q => q.standard) || null;
+  const b = String(betreff ?? '').toLowerCase();
+  // Reihenfolge wie im Flow („Elemente abrufen" sortiert nach Reihenfolge, dann ID).
+  const kandidaten = (queues || []).filter(q => q.aktiv && q.modus !== 'Archiv')
+    .sort((x, y) => (x.reihenfolge || 0) - (y.reihenfolge || 0) || (x.itemId || 0) - (y.itemId || 0));
+  const stichwort = q => (q.stichwoerter || []).some(w => b.includes(w.toLowerCase()));
+  const mitStichwort = q => (q.stichwoerter || []).length > 0;
+  return kandidaten.find(q => mitStichwort(q) && q.domains.length && q.domains.includes(d) && stichwort(q))   // z. B. SAP nur für ein Werk
+    || kandidaten.find(q => mitStichwort(q) && !q.domains.length && stichwort(q))                            // z. B. SAP für alle
+    || (d && kandidaten.find(q => !mitStichwort(q) && q.domains.includes(d)))                                 // Werk nach Domain
+    || kandidaten.find(q => q.standard)
+    || null;
+}
+
+/** „SAP; S/4HANA\nFiori" → ['SAP','S/4HANA','Fiori'] (ohne leere/doppelte, Groß-/Kleinschreibung egal). */
+export function stichwoerterAusText(text) {
+  const out = [];
+  for (const w of String(text ?? '').split(/[;\n,]+/).map(x => x.trim()).filter(Boolean)) {
+    if (!out.some(o => o.toLowerCase() === w.toLowerCase())) out.push(w);
+  }
+  return out;
 }
 
 // ── Konfiguration (Liste „TicketQueues") ────────────────────────────────────
@@ -120,6 +160,9 @@ export function queueAusFeldern(item) {
     listId: _guid(f.ListenId),
     listUrl: _txt(f.ListenUrl),
     domains: domainsAusText(f.Domains),
+    stichwoerter: stichwoerterAusText(f.Stichwoerter),
+    kategorie: _txt(f.Kategorie),
+    farbe: /^#[0-9a-f]{6}$/i.test(_txt(f.Farbe)) ? _txt(f.Farbe) : '',
     werk: _txt(f.Werk),
     bearbeiter: mailsAusText(f.Bearbeiter),
     gruppe: _txt(f.Gruppe),
@@ -142,6 +185,9 @@ export function queueZuFeldern(q) {
     ListenId: _guid(q.listId),
     ListenUrl: _txt(q.listUrl),
     Domains: domainsAusText(Array.isArray(q.domains) ? q.domains.join(';') : q.domains).join(';'),
+    Stichwoerter: stichwoerterAusText(Array.isArray(q.stichwoerter) ? q.stichwoerter.join(';') : q.stichwoerter).join(';'),
+    Kategorie: _txt(q.kategorie),
+    Farbe: /^#[0-9a-f]{6}$/i.test(_txt(q.farbe)) ? _txt(q.farbe) : '',
     Werk: _txt(q.werk),
     Bearbeiter: mailsAusText(Array.isArray(q.bearbeiter) ? q.bearbeiter.join(';') : q.bearbeiter).join(';'),
     Gruppe: _txt(q.gruppe),
@@ -180,7 +226,10 @@ export function pruefeQueues(queues) {
     if (q.modus === 'Ticket' && !q.gruppe) add(q, 'hinweis', 'Keine Bearbeiter-Gruppe – nur Admins sehen die Tickets.');
     if (q.modus === 'Ticket' && !q.listId) add(q, 'hinweis', 'Liste noch nicht eingerichtet (Verwaltung → Einrichtung).');
     if (q.modus === 'Archiv' && (q.domains.length || q.standard)) add(q, 'hinweis', 'Archiv nimmt keine neuen Tickets an – Domains/Standard werden ignoriert.');
+    if (q.modus === 'Archiv' && (q.stichwoerter || []).length) add(q, 'hinweis', 'Archiv nimmt keine neuen Tickets an – Stichwörter werden ignoriert.');
     if (!q.aktiv) continue;
+    // Stichwort-Queues (z. B. SAP) dürfen Domains mit einer Werk-Queue teilen: Das Stichwort entscheidet.
+    if ((q.stichwoerter || []).length) continue;
     for (const d of q.domains) {
       if (domains.has(d) && q.modus !== 'Archiv') add(q, 'fehler', `Domain ${d} ist schon ${domains.get(d)} zugeordnet.`);
       if (q.modus !== 'Archiv') domains.set(d, q.kennung);
@@ -244,6 +293,7 @@ export function bearbeitungsMaske(mitwirken) {
 /** Rollen im Soll: eingebaute über RoleTypeKind (sprachunabhängig), eigene über den Namen. */
 export const ROLLE = Object.freeze({
   voll: Object.freeze({ typ: 5, anzeige: 'Vollzugriff' }),
+  mitwirken: Object.freeze({ typ: 3, anzeige: 'Mitwirken' }),
   lesen: Object.freeze({ typ: 2, anzeige: 'Lesen' }),
 });
 export const rolleBearbeitung = name => ({ name, anzeige: name });
@@ -275,6 +325,13 @@ export function sollRechte(q, ctx, art = 'tickets') {
     return soll;
   }
   if (q.gruppe) add('gruppe', q.gruppe, q.gruppe, bearbeitung, `Bearbeiter der Queue ${q.kennung}`);
+  // Übergabe: Bearbeiter anderer Queues dürfen hier Tickets anlegen (z. B. SAP-Fall an das SAP-Team),
+  // sehen wegen „nur eigene Elemente" aber nichts außer dem, was sie selbst übergeben.
+  if (art === 'tickets' && ctx.uebergabe !== false) {
+    for (const x of (ctx.queues || []).filter(x => x.modus === 'Ticket' && x.aktiv && x.gruppe && x.gruppe !== q.gruppe)) {
+      add('gruppe', x.gruppe, x.gruppe, ROLLE.mitwirken, `Übergabe aus Queue ${x.kennung} (sieht nur selbst übergebene Tickets)`);
+    }
+  }
   if (art === 'tickets' && ctx.melderSehen !== false && ctx.melderClaim) {
     add('login', ctx.melderClaim, ctx.melderAnzeige || ctx.melderClaim, ROLLE.lesen, 'Melder sehen nur ihre eigenen Tickets');
   }
@@ -426,6 +483,7 @@ export function ticketAusSp(it, q, felder = {}) {
     erstellt: it.Created || '',
     geaendert: it.Modified || '',
     anhaenge: !!it.Attachments,
+    hauptticket: (() => { const n = parseTicketNummer(it.Hauptticket); return n ? ticketNummer(n.kennung, n.id) : ''; })(),
   };
 }
 
@@ -468,7 +526,7 @@ export function filtereTickets(tickets, f = {}, ich = '', jetzt = new Date()) {
     if (f.zuweisung === 'keiner' && t.bearbeiter.length) return false;
     if (f.ueberfaellig && !istUeberfaellig(t, jetzt)) return false;
     if (such) {
-      const heu = [t.nummer, t.titel, t.melder?.name, t.melderMail, t.kategorie, t.werk, ...t.bearbeiter.map(b => b.name)]
+      const heu = [t.nummer, t.titel, t.melder?.name, t.melderMail, t.kategorie, t.werk, t.hauptticket, ...t.bearbeiter.map(b => b.name)]
         .map(_lc).join(' ');
       if (!such.split(/\s+/).every(w => heu.includes(w))) return false;
     }
@@ -485,6 +543,109 @@ export function sortiereTickets(tickets, art = 'neu') {
   if (art === 'prio') return liste.sort((a, b) => _prioRang(a.prio) - _prioRang(b.prio) || zeit(a.gemeldetAm) - zeit(b.gemeldetAm));
   if (art === 'geaendert') return liste.sort((a, b) => zeit(b.geaendert) - zeit(a.geaendert));
   return liste.sort((a, b) => zeit(b.gemeldetAm) - zeit(a.gemeldetAm) || b.id - a.id);
+}
+
+// ── Haupt- und Untertickets ─────────────────────────────────────────────────
+//
+// Ein Unterticket trägt in „Hauptticket" die Nummer seines Haupttickets. Es gibt nur
+// eine Ebene: Wird ein Hauptticket selbst Unterticket, wandern seine Untertickets mit.
+// Die Pläne verändern nichts – sie sagen nur, welche Tickets welchen Wert bekommen.
+
+/** Alle bekannten Ticketnummern in einem Text (auch „Neues Ticket: 123" → ALT-123). */
+export function nummernImText(text, kennungen, archivKennung = 'ALT') {
+  const s = String(text ?? '');
+  const bekannt = new Set((kennungen || []).map(k => String(k).toUpperCase()));
+  const out = [];
+  const add = n => { if (!out.includes(n)) out.push(n); };
+  for (const m of s.toUpperCase().matchAll(/(?:^|[^A-Z0-9])([A-Z][A-Z0-9]{1,9})-(\d{1,9})(?!\d)/g)) {
+    if (bekannt.has(m[1])) add(`${m[1]}-${Number(m[2])}`);
+  }
+  for (const m of s.matchAll(/Neues Ticket:\s*(\d{1,9})\b/gi)) add(`${archivKennung}-${Number(m[1])}`);
+  return out;
+}
+
+export const untertickets = (hauptNr, alle) => (alle || []).filter(x => x.hauptticket && x.hauptticket === hauptNr);
+
+/** `unter` wird Unterticket von `haupt` (bzw. von dessen Hauptticket). */
+export function planZusammenfuehren(unter, haupt, alle) {
+  if (!unter || !haupt) throw new Error('Ticket nicht gefunden.');
+  if (unter.nummer === haupt.nummer) throw new Error('Ein Ticket kann nicht mit sich selbst zusammengeführt werden.');
+  const ziel = haupt.hauptticket || haupt.nummer;
+  if (ziel === unter.nummer) throw new Error(`${haupt.nummer} ist bereits Unterticket von ${unter.nummer}.`);
+  if (unter.hauptticket === ziel) throw new Error(`${unter.nummer} ist bereits Unterticket von ${ziel}.`);
+  const aenderungen = [{ nummer: unter.nummer, hauptticket: ziel }];
+  for (const x of untertickets(unter.nummer, alle)) aenderungen.push({ nummer: x.nummer, hauptticket: ziel });
+  return { haupt: ziel, aenderungen };
+}
+
+/** Ein Unterticket wird zum Hauptticket; das bisherige Hauptticket und alle Geschwister hängen sich darunter. */
+export function planHauptWechseln(neu, alle) {
+  if (!neu?.hauptticket) throw new Error(`${neu?.nummer || 'Das Ticket'} ist bereits Hauptticket.`);
+  const alt = neu.hauptticket;
+  const aenderungen = [{ nummer: neu.nummer, hauptticket: '' }, { nummer: alt, hauptticket: neu.nummer }];
+  for (const x of untertickets(alt, alle)) if (x.nummer !== neu.nummer) aenderungen.push({ nummer: x.nummer, hauptticket: neu.nummer });
+  return { haupt: neu.nummer, aenderungen };
+}
+
+/** Unterticket lösen – oder bei einem Hauptticket die ganze Gruppe auflösen. */
+export function planLoesen(t, alle) {
+  if (t.hauptticket) return { aenderungen: [{ nummer: t.nummer, hauptticket: '' }] };
+  const unter = untertickets(t.nummer, alle);
+  if (!unter.length) throw new Error(`${t.nummer} ist mit keinem Ticket verknüpft.`);
+  return { aenderungen: unter.map(x => ({ nummer: x.nummer, hauptticket: '' })) };
+}
+
+/** Eindeutige Melder-Adressen einer Ticketgruppe (für Benachrichtigungen). */
+export function melderAdressen(tickets) {
+  const out = [];
+  for (const t of tickets) {
+    const m = _lc(t.melderMail || t.melder?.mail).trim();
+    if (m && istMail(m) && !out.includes(m)) out.push(m);
+  }
+  return out;
+}
+
+const STOPPWOERTER = new Set(['aw', 're', 'wg', 'fw', 'fwd', 'tr', 'und', 'oder', 'der', 'die', 'das', 'den', 'dem', 'ist', 'sind', 'ich', 'wir', 'kein', 'keine', 'nicht', 'geht', 'mehr', 'mit', 'von', 'für', 'bei', 'auf', 'aus', 'ein', 'eine', 'einen', 'bitte', 'hallo', 'problem', 'frage', 'ticket', 'eingangsbestätigung']);
+
+/** Bedeutungstragende Wörter eines Titels (für die Ähnlichkeit). */
+export function titelWoerter(titel) {
+  return new Set(String(titel ?? '').toLowerCase()
+    .replace(/\[#[^\]]*\]/g, ' ')
+    .split(/[^a-z0-9äöüß]+/)
+    .filter(w => w.length > 2 && !STOPPWOERTER.has(w)));
+}
+
+/** Jaccard-Ähnlichkeit zweier Titel (0…1). */
+export function aehnlichkeit(a, b) {
+  const x = titelWoerter(a), y = titelWoerter(b);
+  if (!x.size || !y.size) return 0;
+  let gemeinsam = 0;
+  for (const w of x) if (y.has(w)) gemeinsam++;
+  return gemeinsam / (x.size + y.size - gemeinsam);
+}
+
+/**
+ * Mögliche Duplikate eines Tickets: (1) Nummer im Betreff/Text, (2) gleicher Melder mit
+ * ähnlichem Betreff in 14 Tagen, (3) sehr ähnlicher Betreff anderer Melder in 3 Tagen
+ * (Hinweis auf eine Störung). Bereits verknüpfte Tickets fallen weg.
+ */
+export function duplikatVorschlaege(t, alle, { kennungen = [], archivKennung = 'ALT', jetzt = new Date() } = {}) {
+  const nachNr = new Map((alle || []).map(x => [x.nummer, x]));
+  const familie = t.hauptticket || t.nummer;
+  const verbunden = x => x.nummer === t.nummer || x.nummer === familie || x.hauptticket === familie;
+  const out = [];
+  const add = (x, grund) => { if (x && !verbunden(x) && !out.some(o => o.ticket.nummer === x.nummer)) out.push({ ticket: x, grund }); };
+  const text = `${t.titel}\n${String(t.beschreibung ?? '').replace(/<[^>]+>/g, ' ')}`;
+  for (const n of nummernImText(text, kennungen, archivKennung)) add(nachNr.get(n), 'Nummer im Betreff/Text');
+  const zeit = x => Date.parse(x.gemeldetAm || x.erstellt) || 0;
+  const tage = x => Math.abs(zeit(x) - zeit(t)) / 86400e3;
+  const offen = (alle || []).filter(x => istOffen(x.status) && !verbunden(x));
+  const mail = _lc(t.melderMail);
+  offen.filter(x => mail && _lc(x.melderMail) === mail && tage(x) <= 14 && aehnlichkeit(x.titel, t.titel) >= 0.5)
+    .forEach(x => add(x, 'gleicher Melder, ähnlicher Betreff'));
+  offen.filter(x => _lc(x.melderMail) !== mail && tage(x) <= 3 && aehnlichkeit(x.titel, t.titel) >= 0.6)
+    .forEach(x => add(x, 'ähnlicher Betreff von anderen – Störung?'));
+  return out.slice(0, 6);
 }
 
 // ── Kennzahlen ──────────────────────────────────────────────────────────────

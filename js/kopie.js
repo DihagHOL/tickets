@@ -36,7 +36,7 @@ async function notizListeId(listenName) {
 /**
  * @param quelle { listId, id, listenName? }
  * @param ziel   { listId, listenName?, kennung? }
- * @param optionen { hinweis?: string, werk?: string, status?: string }
+ * @param optionen { hinweis?: string, werk?: string, status?: string, extra?: { Spalte: Wert } }
  * @returns { id, warnungen: string[] }
  */
 export async function kopiereTicket(quelle, ziel, optionen = {}) {
@@ -59,16 +59,10 @@ export async function kopiereTicket(quelle, ziel, optionen = {}) {
   }
   if (optionen.werk && schema.felder.some(f => f.InternalName === FELDER.werk)) body[FELDER.werk] = optionen.werk;
   if (optionen.status) body[FELDER.status] = optionen.status;
+  for (const [k, v] of Object.entries(optionen.extra || {})) if (schema.felder.some(f => f.InternalName === k)) body[k] = v;
 
   const neu = await sp(`_api/web/lists(${guid(ziel.listId)})/items`, { method: 'POST', body, verbose: true });
   const neueId = neu.Id ?? neu.ID;
-
-  // „Erstellt von" = Melder (sonst sieht er das Ticket nicht), ersatzweise der bisherige Ersteller.
-  const autor = String(it[FELDER.melder]?.EMail || it.Author?.EMail || '').toLowerCase();
-  if (autor) {
-    try { await validateUpdate(ziel.listId, neueId, { Author: personenWert([autor]) }, { neueVersion: false }); }
-    catch (e) { warnungen.push(`„Erstellt von" nicht gesetzt (${e.message})`); }
-  }
 
   // Anhänge
   if (it.Attachments) {
@@ -112,6 +106,15 @@ export async function kopiereTicket(quelle, ziel, optionen = {}) {
   if (optionen.hinweis) {
     try { await sp(`_api/web/lists(${guid(ziel.listId)})/GetItemById(${neueId})/Comments`, { method: 'POST', body: { text: optionen.hinweis } }); }
     catch (e) { warnungen.push('Hinweis-Kommentar: ' + e.message); }
+  }
+
+  // Zuletzt: „Erstellt von" = Melder (sonst sieht er das Ticket nicht), ersatzweise der bisherige
+  // Ersteller. Bewusst am Ende: Wer nur übergeben darf, sieht das Ticket danach nicht mehr
+  // („nur eigene Elemente") – Anhänge und Kommentare müssen vorher drin sein.
+  const autor = String(it[FELDER.melder]?.EMail || it.Author?.EMail || '').toLowerCase();
+  if (autor) {
+    try { await validateUpdate(ziel.listId, neueId, { Author: personenWert([autor]) }, { neueVersion: false }); }
+    catch (e) { warnungen.push(`„Erstellt von" nicht gesetzt (${e.message})`); }
   }
   return { id: neueId, warnungen };
 }

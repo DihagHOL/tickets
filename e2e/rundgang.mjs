@@ -12,7 +12,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
-import { neuerTenant, beantworte } from './attrappe.mjs';
+import { neuerTenant, beantworte, LISTEN } from './attrappe.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BILDER = path.join(ROOT, 'e2e', 'bilder');
@@ -83,18 +83,18 @@ const warte = ms => new Promise(r => setTimeout(r, ms));
   await page.goto(BASIS);
   await page.waitForSelector('table.tickets');
   ok(/#\/posteingang$/.test(page.url()), 'Start = Posteingang');
-  const zeilen = await page.$$eval('table.tickets tbody tr', trs => trs.map(tr => tr.querySelector('.nr').textContent.trim()));
+  const zeilen = await page.$$eval('table.tickets tbody tr', trs => trs.map(tr => tr.querySelector('.nr a').textContent.trim()));
   ok(zeilen.includes('SCH-1') && zeilen.includes('SCH-4') && !zeilen.includes('SCH-3'), `offene SCH-Tickets, kein erledigtes (${zeilen.join(', ')})`);
   ok(!zeilen.some(z => z.startsWith('SHB')), 'keine SHB-Tickets (nicht Bearbeiterin dort)');
   ok(await page.$('a.nav-punkt[href="#/verwaltung"]') === null, 'keine Verwaltung ohne Besitzerrechte');
   await page.screenshot({ path: path.join(BILDER, '1-posteingang.png') });
 
   await page.click('button[data-sicht="ohne"]');
-  const ohne = await page.$$eval('table.tickets tbody tr .nr', x => x.map(e => e.textContent.trim()));
-  ok(ohne.length === 2 && !ohne.includes('SCH-2'), `Sicht „Ohne Bearbeiter" (${ohne.join(', ')})`);
+  const ohne = await page.$$eval('table.tickets tbody tr .nr a', x => x.map(e => e.textContent.trim()));
+  ok(ohne.length === 3 && !ohne.includes('SCH-2'), `Sicht „Ohne Bearbeiter" (${ohne.join(', ')})`);
   await page.fill('input.suche', 'sap');
   await warte(400);
-  const such = await page.$$eval('table.tickets tbody tr .nr', x => x.map(e => e.textContent.trim()));
+  const such = await page.$$eval('table.tickets tbody tr .nr a', x => x.map(e => e.textContent.trim()));
   ok(such.join() === 'SCH-4', 'Suche „sap" findet SCH-4');
   await page.fill('input.suche', '');
   await page.click('button[data-sicht="offen"]');
@@ -185,6 +185,85 @@ const warte = ms => new Promise(r => setTimeout(r, ms));
   await ctx.close();
 }
 
+// ── 2b) Zusammenführen, Hauptticket wechseln, SAP-Übergabe ──
+{
+  console.log('\nZusammenführen / Hauptticket / SAP-Übergabe (anna.agent@dihag.com)');
+  const t = neuerTenant();
+  const sch = t.listen[LISTEN.sch];
+  const it = id => sch.items.find(i => i.Id === id);
+  const bisMails = async n => { for (let i = 0; i < 80 && t.mails.length < n; i++) await warte(100); };
+  const { page, ctx, fehler } = await sitzung('anna.agent@dihag.com', t);
+
+  await page.goto(BASIS + '#/t/SCH-5');
+  await page.waitForSelector('.duplikate');
+  ok((await page.textContent('.duplikate')).includes('SCH-1'), 'Duplikat erkannt: SCH-5 ähnelt SCH-1 (anderer Melder, gleiches Thema)');
+  await page.screenshot({ path: path.join(BILDER, '9-duplikat.png') });
+  await page.click('.duplikate button[data-nr="SCH-1"]');
+  await page.waitForSelector('dialog[open] input[name=nr]');
+  ok(await page.inputValue('dialog[open] input[name=nr]') === 'SCH-1', 'Zusammenführen: Nummer vorbelegt');
+  await page.click('dialog[open] button[value="ok"]');
+  await page.waitForSelector('dialog[open] button[value="ja"]');
+  await page.click('dialog[open] button[value="ja"]');
+  await page.waitForFunction(() => location.hash === '#/t/SCH-1');
+  await page.waitForSelector('.verknuepft-liste');
+  ok(it(5).Hauptticket === 'SCH-1', 'SCH-5 ist jetzt Unterticket von SCH-1');
+  ok(t.mails.some(m => m.toRecipients[0].emailAddress.address === 'eva@schmie-guss.de' && /^\[#SCH-5\]/.test(m.subject)), 'Melderin von SCH-5 erfährt es – mit ihrer eigenen Nummer');
+  ok((await page.textContent('.nr-zeile')).includes('Hauptticket · 1 Unterticket'), 'SCH-1 als Hauptticket gekennzeichnet');
+
+  const vorher = t.mails.length;
+  await page.fill('#t-antwort-text', 'Der Techniker ist unterwegs.');
+  ok(await page.isChecked('form[data-absenden="t-antwort"] input[name=unter]'), 'Antwort: „Auch die Melder der Untertickets" ist vorausgewählt');
+  await page.click('form[data-absenden="t-antwort"] button.primaer');
+  await bisMails(vorher + 2);
+  const neu = t.mails.slice(vorher);
+  ok(neu.length === 2
+    && neu.some(m => m.toRecipients[0].emailAddress.address === 'max@schmie-guss.de' && /^\[#SCH-1\]/.test(m.subject))
+    && neu.some(m => m.toRecipients[0].emailAddress.address === 'eva@schmie-guss.de' && /^\[#SCH-5\]/.test(m.subject) && /gemeinsam mit Ticket SCH-1/.test(m.body.content)),
+  `Antwort am Hauptticket erreicht beide Melder, jeden mit eigener Nummer (${neu.map(m => m.subject).join(' | ')})`);
+  ok((sch.kommentare[5] || []).some(k => k.text.startsWith('✉ Über Hauptticket SCH-1: Der Techniker')), 'Nachricht steht auch im Verlauf des Untertickets');
+  await page.waitForFunction(() => [...document.querySelectorAll('#t-verlauf .eintrag .badge')].some(b => b.textContent.includes('SCH-5')));
+  ok(true, 'Verlauf des Haupttickets zeigt Einträge aus SCH-5');
+  await page.screenshot({ path: path.join(BILDER, '10-hauptticket.png'), fullPage: true });
+
+  await page.goto(BASIS + '#/posteingang');
+  await page.waitForSelector('table.tickets');
+  const reihen = await page.$$eval('table.tickets tbody tr', trs => trs.map(tr => tr.textContent.replace(/\s+/g, ' ')));
+  ok(!reihen.some(r => r.includes('SCH-5')) && reihen.some(r => r.includes('SCH-1') && r.includes('+1')), 'Posteingang: Unterticket eingeklappt, Hauptticket mit „+1"');
+
+  await page.goto(BASIS + '#/t/SCH-5');
+  await page.waitForSelector('.verknuepfung button[data-aktion="t-haupt-wechseln"]');
+  await page.click('.verknuepfung button[data-aktion="t-haupt-wechseln"]');
+  await page.waitForSelector('dialog[open] button[value="ja"]');
+  await page.click('dialog[open] button[value="ja"]');
+  await page.waitForFunction(() => document.querySelector('.nr-zeile')?.textContent.includes('Hauptticket · 1'));
+  ok(it(5).Hauptticket === '' && it(1).Hauptticket === 'SCH-5', 'Hauptticket gewechselt: SCH-5 führt, SCH-1 hängt darunter');
+
+  const vorErledigt = t.mails.length;
+  await page.click('button[data-aktion="t-erledigt"]');
+  await page.waitForSelector('dialog[open] input[name=unter]');
+  await page.fill('dialog[open] textarea', 'Drucker getauscht.');
+  await page.click('dialog[open] button[value="ok"]');
+  await page.waitForFunction(() => document.querySelector('.nr-zeile')?.textContent.includes('Erledigt'));
+  await bisMails(vorErledigt + 2);
+  ok(it(5).Status === 'Erledigt' && it(1).Status === 'Erledigt', 'Erledigt am Hauptticket schließt das Unterticket mit');
+  ok(t.mails.slice(vorErledigt).some(m => m.toRecipients[0].emailAddress.address === 'max@schmie-guss.de' && /^\[#SCH-1\]/.test(m.subject) && /erledigt/i.test(m.body.content)), 'Melder des Untertickets bekommt die Erledigt-Mail');
+
+  await page.goto(BASIS + '#/t/SCH-4');
+  await page.waitForSelector('button[data-aktion="t-weiterleiten"]');
+  await page.click('button[data-aktion="t-weiterleiten"]');
+  await page.waitForSelector('dialog[open] select[name=ziel]');
+  const ziele = await page.$$eval('dialog[open] select[name=ziel] option', o => o.map(x => x.value));
+  ok(ziele.join() === 'SAP', `Übergabe-Ziele: nur SAP (dort darf die SCH-Gruppe anlegen) – ${ziele.join()}`);
+  await page.click('dialog[open] button[value="ok"]');
+  await page.waitForFunction(() => document.querySelector('#meldungen')?.textContent.includes('Übergeben: SAP-1'));
+  const sap = t.listen[LISTEN.sap].items[0];
+  ok(sap && sap.Kategorie === 'SAP' && sap.Title === 'SAP-Berechtigung Einkauf', 'SAP-Ticket SAP-1 angelegt (Kategorie SAP)');
+  ok(it(4).Status === 'Abgebrochen' && (sch.kommentare[4] || []).some(k => k.text.includes('SAP-1')), 'SCH-4 verweist auf SAP-1 und ist geschlossen');
+  ok(/#\/t\/SCH-4$/.test(page.url()), 'nach Übergabe in fremde Queue bleibt die Ansicht beim alten Ticket');
+  ok(fehler.length === 0, 'keine Skriptfehler' + (fehler.length ? ': ' + fehler.join(' | ') : ''));
+  await ctx.close();
+}
+
 // ── 3) Admin ──
 {
   console.log('\nAdmin (admin@dihag.com)');
@@ -200,6 +279,10 @@ const warte = ms => new Promise(r => setTimeout(r, ms));
   await page.fill('input[data-eingabe="v-routing"]', 'x@irgendwo.de');
   await page.waitForFunction(() => document.querySelector('#v-routing-ergebnis')?.textContent.includes('SHB'));
   ok(true, 'Routing-Test: unbekannt → Standard SHB');
+  await page.fill('#v-routing-mail', 'x@schmie-guss.de');
+  await page.fill('#v-routing-betreff', 'AW: SAP Berechtigung');
+  await page.waitForFunction(() => document.querySelector('#v-routing-ergebnis')?.textContent.includes('SAP'));
+  ok(true, 'Routing-Test: Stichwort SAP im Betreff → SAP, auch von schmie-guss.de');
   await page.screenshot({ path: path.join(BILDER, '6-verwaltung-queues.png'), fullPage: true });
 
   await page.click('button[data-aktion="v-queue-bearbeiten"][data-kennung="SCH"]');
@@ -211,7 +294,7 @@ const warte = ms => new Promise(r => setTimeout(r, ms));
   await page.goto(BASIS + '#/verwaltung/rechte');
   await page.waitForSelector('button[data-aktion="v-alle-pruefen"]');
   await page.click('button[data-aktion="v-alle-pruefen"]');
-  await page.waitForFunction(() => document.querySelectorAll('.pruefliste').length >= 3, null, { timeout: 15000 });
+  await page.waitForSelector('#v-q-ALT .pruefliste', { timeout: 15000 });
   const sch = await page.textContent('#v-q-SCH');
   const shb = await page.textContent('#v-q-SHB');
   ok(/zu viel: .*Mitwirken/.test(sch) && /fehlt: .*Jeder außer externen Benutzern/.test(sch), 'SCH: überzählige Mitwirken-Rechte und fehlende Melder-Leserechte erkannt');

@@ -73,6 +73,23 @@
             ]
           }
         },
+        "StichwortQueues": {
+          "type": "InitializeVariable",
+          "inputs": {
+            "variables": [
+              {
+                "name": "StichwortQueues",
+                "type": "array",
+                "value": []
+              }
+            ]
+          },
+          "runAfter": {
+            "IstAntwort": [
+              "Succeeded"
+            ]
+          }
+        },
         "Schleifenschutz": {
           "type": "If",
           "expression": {
@@ -152,7 +169,7 @@
             "actions": {}
           },
           "runAfter": {
-            "IstAntwort": [
+            "StichwortQueues": [
               "Succeeded"
             ]
           }
@@ -169,6 +186,7 @@
               "dataset": "https://dihag.sharepoint.com/sites/ticket",
               "table": "TicketQueues",
               "$filter": "Aktiv eq 1",
+              "$orderby": "Reihenfolge",
               "$top": 500
             },
             "authentication": "@parameters('$authentication')"
@@ -235,11 +253,53 @@
             ]
           }
         },
-        "Ticketnummer": {
-          "type": "Compose",
-          "inputs": "@if(contains(outputs('Betreff'), '[#'), toUpper(trim(first(split(last(split(outputs('Betreff'), '[#')), ']')))), if(contains(outputs('Betreff'), 'Neues Ticket: '), concat('ALT-', first(split(trim(last(split(outputs('Betreff'), 'Neues Ticket: '))), ' '))), ''))",
+        "Kennungen": {
+          "type": "Select",
+          "inputs": {
+            "from": "@outputs('Queues')",
+            "select": "@coalesce(item()?['Kennung'], '')"
+          },
           "runAfter": {
             "Queues": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Kennungsliste": {
+          "type": "Compose",
+          "inputs": "@concat(';', toUpper(join(body('Kennungen'), ';')), ';')",
+          "runAfter": {
+            "Kennungen": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Woerter": {
+          "type": "Compose",
+          "inputs": "@split(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(toUpper(outputs('Betreff')), '[', ' '), ']', ' '), '(', ' '), ')', ' '), ':', ' '), ',', ' '), ';', ' '), '#', ' '), '/', ' '), '\"', ' '), '''', ' '), '.', ' '), '!', ' '), '?', ' '), '<', ' '), '>', ' '), ' ')",
+          "runAfter": {
+            "Kennungsliste": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Nummern_im_Betreff": {
+          "type": "Query",
+          "inputs": {
+            "from": "@outputs('Woerter')",
+            "where": "@and(equals(length(split(item(), '-')), 2), not(equals(first(split(item(), '-')), '')), contains(outputs('Kennungsliste'), concat(';', first(split(item(), '-')), ';')), isInt(last(split(item(), '-'))), lessOrEquals(length(last(split(item(), '-'))), 9))"
+          },
+          "runAfter": {
+            "Woerter": [
+              "Succeeded"
+            ]
+          }
+        },
+        "Ticketnummer": {
+          "type": "Compose",
+          "inputs": "@if(contains(outputs('Betreff'), '[#'), toUpper(trim(first(split(last(split(outputs('Betreff'), '[#')), ']')))), if(greater(length(body('Nummern_im_Betreff')), 0), first(body('Nummern_im_Betreff')), if(contains(outputs('Betreff'), 'Neues Ticket: '), concat('ALT-', first(split(trim(last(split(outputs('Betreff'), 'Neues Ticket: '))), ' '))), '')))",
+          "runAfter": {
+            "Nummern_im_Betreff": [
               "Succeeded"
             ]
           }
@@ -580,14 +640,101 @@
                 "inputs": "@last(split(outputs('Absender'), '@'))",
                 "runAfter": {}
               },
+              "Stichwort_pruefen": {
+                "type": "Foreach",
+                "foreach": "@outputs('Queues')",
+                "runtimeConfiguration": {
+                  "concurrency": {
+                    "repetitions": 1
+                  }
+                },
+                "actions": {
+                  "Stichwort_Treffer": {
+                    "type": "Query",
+                    "inputs": {
+                      "from": "@split(coalesce(items('Stichwort_pruefen')?['Stichwoerter'], ''), ';')",
+                      "where": "@and(not(equals(trim(item()), '')), contains(toLower(outputs('Betreff')), toLower(trim(item()))))"
+                    },
+                    "runAfter": {}
+                  },
+                  "Treffer_merken": {
+                    "type": "If",
+                    "expression": {
+                      "and": [
+                        {
+                          "greater": [
+                            "@length(body('Stichwort_Treffer'))",
+                            0
+                          ]
+                        },
+                        {
+                          "not": {
+                            "equals": [
+                              "@items('Stichwort_pruefen')?['Modus']?['Value']",
+                              "Archiv"
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    "actions": {
+                      "Queue_merken": {
+                        "type": "AppendToArrayVariable",
+                        "inputs": {
+                          "name": "StichwortQueues",
+                          "value": "@items('Stichwort_pruefen')"
+                        },
+                        "runAfter": {}
+                      }
+                    },
+                    "else": {
+                      "actions": {}
+                    },
+                    "runAfter": {
+                      "Stichwort_Treffer": [
+                        "Succeeded"
+                      ]
+                    }
+                  }
+                },
+                "runAfter": {
+                  "Domain": [
+                    "Succeeded"
+                  ]
+                }
+              },
+              "Stichwort_mit_Domain": {
+                "type": "Query",
+                "inputs": {
+                  "from": "@variables('StichwortQueues')",
+                  "where": "@and(not(equals(coalesce(item()?['Domains'], ''), '')), contains(concat(';', toLower(coalesce(item()?['Domains'], '')), ';'), concat(';', outputs('Domain'), ';')))"
+                },
+                "runAfter": {
+                  "Stichwort_pruefen": [
+                    "Succeeded"
+                  ]
+                }
+              },
+              "Stichwort_ohne_Domain": {
+                "type": "Query",
+                "inputs": {
+                  "from": "@variables('StichwortQueues')",
+                  "where": "@equals(coalesce(item()?['Domains'], ''), '')"
+                },
+                "runAfter": {
+                  "Stichwort_mit_Domain": [
+                    "Succeeded"
+                  ]
+                }
+              },
               "Queue_nach_Domain": {
                 "type": "Query",
                 "inputs": {
                   "from": "@outputs('Queues')",
-                  "where": "@and(not(equals(item()?['Modus']?['Value'], 'Archiv')), contains(concat(';', toLower(coalesce(item()?['Domains'], '')), ';'), concat(';', outputs('Domain'), ';')))"
+                  "where": "@and(not(equals(item()?['Modus']?['Value'], 'Archiv')), equals(coalesce(item()?['Stichwoerter'], ''), ''), contains(concat(';', toLower(coalesce(item()?['Domains'], '')), ';'), concat(';', outputs('Domain'), ';')))"
                 },
                 "runAfter": {
-                  "Domain": [
+                  "Stichwort_ohne_Domain": [
                     "Succeeded"
                   ]
                 }
@@ -606,7 +753,7 @@
               },
               "Ziel": {
                 "type": "Compose",
-                "inputs": "@if(greater(length(body('Queue_nach_Domain')), 0), first(body('Queue_nach_Domain')), if(greater(length(body('Standard_Queue')), 0), first(body('Standard_Queue')), null))",
+                "inputs": "@if(greater(length(body('Stichwort_mit_Domain')), 0), first(body('Stichwort_mit_Domain')), if(greater(length(body('Stichwort_ohne_Domain')), 0), first(body('Stichwort_ohne_Domain')), if(greater(length(body('Queue_nach_Domain')), 0), first(body('Queue_nach_Domain')), if(greater(length(body('Standard_Queue')), 0), first(body('Standard_Queue')), null))))",
                 "runAfter": {
                   "Standard_Queue": [
                     "Succeeded"
@@ -903,6 +1050,15 @@
                   ]
                 }
               },
+              "Werk_Wert": {
+                "type": "Compose",
+                "inputs": "@if(equals(coalesce(outputs('Ziel')?['Werk'], ''), ''), if(greater(length(body('Queue_nach_Domain')), 0), coalesce(first(body('Queue_nach_Domain'))?['Werk'], ''), ''), outputs('Ziel')?['Werk'])",
+                "runAfter": {
+                  "Nummer": [
+                    "Succeeded"
+                  ]
+                }
+              },
               "Status_Werk_setzen_Inhalt": {
                 "type": "Compose",
                 "inputs": {
@@ -913,13 +1069,13 @@
                     },
                     {
                       "FieldName": "Werk",
-                      "FieldValue": "@{outputs('Ziel')?['Werk']}"
+                      "FieldValue": "@{outputs('Werk_Wert')}"
                     }
                   ],
                   "bNewDocumentUpdate": false
                 },
                 "runAfter": {
-                  "Nummer": [
+                  "Werk_Wert": [
                     "Succeeded"
                   ]
                 }
@@ -950,6 +1106,69 @@
                   ]
                 }
               },
+              "Kategorie_setzen": {
+                "type": "If",
+                "expression": {
+                  "not": {
+                    "equals": [
+                      "@coalesce(outputs('Ziel')?['Kategorie'], '')",
+                      ""
+                    ]
+                  }
+                },
+                "actions": {
+                  "Kategorie_eintragen_Inhalt": {
+                    "type": "Compose",
+                    "inputs": {
+                      "formValues": [
+                        {
+                          "FieldName": "Kategorie",
+                          "FieldValue": "@{outputs('Ziel')?['Kategorie']}"
+                        }
+                      ],
+                      "bNewDocumentUpdate": false
+                    },
+                    "runAfter": {}
+                  },
+                  "Kategorie_eintragen": {
+                    "type": "OpenApiConnection",
+                    "inputs": {
+                      "host": {
+                        "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+                        "connectionName": "shared_sharepointonline",
+                        "operationId": "HttpRequest"
+                      },
+                      "parameters": {
+                        "dataset": "https://dihag.sharepoint.com/sites/ticket",
+                        "parameters/method": "POST",
+                        "parameters/uri": "_api/web/lists(guid'@{outputs('Ziel')?['ListenId']}')/items(@{outputs('Neue_Id')})/ValidateUpdateListItem",
+                        "parameters/headers": {
+                          "Accept": "application/json;odata=nometadata",
+                          "Content-Type": "application/json;odata=nometadata"
+                        },
+                        "parameters/body": "@string(outputs('Kategorie_eintragen_Inhalt'))"
+                      },
+                      "authentication": "@parameters('$authentication')"
+                    },
+                    "runAfter": {
+                      "Kategorie_eintragen_Inhalt": [
+                        "Succeeded"
+                      ]
+                    }
+                  }
+                },
+                "else": {
+                  "actions": {}
+                },
+                "runAfter": {
+                  "Status_Werk_setzen": [
+                    "Succeeded",
+                    "Failed",
+                    "Skipped",
+                    "TimedOut"
+                  ]
+                }
+              },
               "Prio_setzen_Inhalt": {
                 "type": "Compose",
                 "inputs": {
@@ -962,7 +1181,7 @@
                   "bNewDocumentUpdate": false
                 },
                 "runAfter": {
-                  "Status_Werk_setzen": [
+                  "Kategorie_setzen": [
                     "Succeeded",
                     "Failed",
                     "Skipped",

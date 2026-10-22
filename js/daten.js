@@ -49,11 +49,12 @@ export async function ladeQueues() {
   zustand.queues = zeilen.map(queueAusFeldern).sort((a, b) => a.reihenfolge - b.reihenfolge || a.name.localeCompare(b.name));
   zustand.listen.clear();
   await Promise.all(zustand.queues.filter(q => q.listId && q.modus !== 'Hinweis').map(async q => {
-    let rolle = 'keine';
+    let rolle = 'keine', maske = null;
     try {
-      rolle = rolleAusRechten(await sp(`_api/web/lists(${guid(q.listId)})/EffectiveBasePermissions`));
+      maske = await sp(`_api/web/lists(${guid(q.listId)})/EffectiveBasePermissions`);
+      rolle = rolleAusRechten(maske);
     } catch { /* kein Zugriff oder Liste weg */ }
-    zustand.listen.set(q.kennung, { queue: q, rolle, felder: null, auswahl: {}, fehlend: [] });
+    zustand.listen.set(q.kennung, { queue: q, rolle, maske, felder: null, auswahl: {}, fehlend: [] });
   }));
 }
 
@@ -65,6 +66,14 @@ export function meineListen(mindestens = 'melder') {
 
 export const istBearbeiterIrgendwo = () => meineListen('bearbeiter').length > 0;
 export const liste = kennung => zustand.listen.get(kennung) || null;
+export const darfBearbeiten = kennung => ['bearbeiter', 'admin'].includes(liste(kennung)?.rolle);
+
+/** Queues, an die ich übergeben darf: Ticket-Queues, in denen ich Elemente anlegen kann. */
+export const uebergabeZiele = ausser => [...zustand.listen.values()]
+  .filter(l => l.queue.modus === 'Ticket' && l.queue.kennung !== ausser && hatRecht(l.maske, RECHT.hinzufuegen));
+
+/** Kennungen aller Queues (für die Erkennung von Ticketnummern im Text). */
+export const alleKennungen = () => zustand.queues.map(q => q.kennung).filter(Boolean);
 
 // ── Spalten ────────────────────────────────────────────────────────────────
 
@@ -92,7 +101,7 @@ const PERSONEN = ['Author', FELDER.bearbeiter, FELDER.melder];
 function _select(l) {
   const vorhanden = n => !l.fehlend.includes(n);
   const sel = ['Id', 'Created', 'Modified', 'Attachments', 'Author/Title', 'Author/EMail'];
-  for (const n of [FELDER.titel, FELDER.status, FELDER.prio, FELDER.werk, FELDER.gemeldetAm, FELDER.melderMail]) if (vorhanden(n)) sel.push(n);
+  for (const n of [FELDER.titel, FELDER.status, FELDER.prio, FELDER.werk, FELDER.gemeldetAm, FELDER.melderMail, FELDER.hauptticket]) if (vorhanden(n)) sel.push(n);
   for (const n of [FELDER.bearbeiter, FELDER.melder]) if (vorhanden(n)) sel.push(`${n}/Id`, `${n}/Title`, `${n}/EMail`);
   if (l.felder.kategorie) sel.push(l.felder.kategorie);
   if (l.felder.art) sel.push(l.felder.art);
@@ -161,6 +170,41 @@ export async function setzeWerte(nummer, werte, anzeige = {}) {
   const l = liste(n.kennung);
   await validateUpdate(l.queue.listId, n.id, werte);
   _merke(n.kennung, n.id, anzeige);
+}
+
+/** Verknüpfung setzen/lösen (Hauptticket-Nummer oder ''). */
+export async function setzeHauptticket(nummer, haupt) {
+  const n = parseTicketNummer(nummer);
+  const l = liste(n.kennung);
+  if (l.fehlend.includes(FELDER.hauptticket)) throw new Error(`In ${l.queue.liste} fehlt die Spalte „Hauptticket" – Verwaltung → Rechte → „Abgleichen".`);
+  await validateUpdate(l.queue.listId, n.id, { [FELDER.hauptticket]: haupt || '' });
+  _merke(n.kennung, n.id, { hauptticket: haupt || '' });
+}
+
+/**
+ * Untertickets eines Haupttickets aus allen Listen, die ich bearbeiten darf
+ * (Abfrage über die indizierte Spalte „Hauptticket", nicht über alle Tickets).
+ */
+export async function ladeUntertickets(hauptNr) {
+  const listen = meineListen('bearbeiter');
+  const ergebnisse = await Promise.all(listen.map(async l => {
+    await ladeFelder(l.queue.kennung);
+    if (l.fehlend.includes(FELDER.hauptticket)) return [];
+    const roh = await spAlle(`_api/web/lists(${guid(l.queue.listId)})/items?${_select(l)}&$filter=${FELDER.hauptticket} eq ${lit(hauptNr)}&$top=500`).catch(() => []);
+    return roh.map(it => ticketAusSp(it, l.queue, l.felder));
+  }));
+  return ergebnisse.flat().filter(t => t.hauptticket === hauptNr);
+}
+
+/** Ein Ticket (Kurzform ohne Beschreibung) – null, wenn nicht sichtbar. */
+export async function ladeTicketKurz(nummer) {
+  const n = parseTicketNummer(nummer);
+  const l = n && liste(n.kennung);
+  if (!l || l.rolle === 'keine') return null;
+  await ladeFelder(n.kennung);
+  try {
+    return ticketAusSp(await sp(`_api/web/lists(${guid(l.queue.listId)})/items(${n.id})?${_select(l)}`), l.queue, l.felder);
+  } catch { return null; }
 }
 
 export async function setzeBearbeiter(nummer, personenListe) {
@@ -258,6 +302,8 @@ export async function ticketAnlegen(kennung, { titel, beschreibung, prio, melder
   const werke = l.auswahl[FELDER.werk];
   if (q.werk && !l.fehlend.includes(FELDER.werk) && (!werke || werke.includes(q.werk))) felder[FELDER.werk] = q.werk;
   if (melderMail && !l.fehlend.includes(FELDER.melderMail)) felder[FELDER.melderMail] = melderMail;
+  const kat = l.felder.kategorie, katWerte = kat && l.auswahl[kat];
+  if (q.kategorie && kat && (!katWerte || katWerte.includes(q.kategorie))) felder[kat] = q.kategorie;
   if (!l.fehlend.includes(FELDER.gemeldetAm)) felder[FELDER.gemeldetAm] = new Date().toISOString();
   const neu = await graph(`/sites/${zustand.site.graphId}/lists/${q.listId}/items`, { method: 'POST', body: { fields: felder } });
   const id = Number(neu.id);

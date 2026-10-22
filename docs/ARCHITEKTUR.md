@@ -43,7 +43,10 @@ Jetzt:
 | Websitebesitzer (= Admins) | Vollzugriff | Vollzugriff | Vollzugriff |
 | ticket@dihag.com (Flow) | Vollzugriff | Vollzugriff | Vollzugriff |
 | Gruppe `Tickets XY – Bearbeiter` | Ticket-Bearbeitung | Ticket-Bearbeitung | Ticket-Bearbeitung (bei `*`) |
+| Bearbeiter-Gruppen **anderer** Queues | Mitwirken – **nur eigene** (Übergabe) | – | – |
 | Jeder außer externen Benutzern | Lesen – **nur eigene** | – | – |
+
+*Übergabe:* Das Werk-Team kann einen SAP-Fall in die SAP-Liste kopieren, sieht dort aber – wegen „nur eigene Elemente" – nichts außer dem, was es selbst übergeben hat; sobald „Erstellt von" auf den Melder umgestellt ist, nicht einmal das. SAP-Tickets bleiben so dem SAP-Team vorbehalten und umgekehrt.
 
 *Ticket-Bearbeitung* = „Mitwirken" + „Listenverhalten außer Kraft setzen" − „Elemente löschen" − „Versionen löschen". Löschen bleibt Admins vorbehalten (Nachvollziehbarkeit).
 
@@ -71,6 +74,9 @@ Die App selbst hat keine Rechte-Logik, die man umgehen könnte – sie zeigt nur
 | Kennung | Präfix der Ticketnummern (`SCH` → `SCH-12`) |
 | ListenName / ListenId / ListenUrl | Ticketliste (ID/URL setzt „Einrichten") |
 | Domains | Absender-Domains, `;`-getrennt, exakter Vergleich |
+| Stichwoerter | Stichwörter im Betreff (`;`-getrennt, z. B. `SAP;S/4HANA`) – gehen vor der Domain; mit Domains nur für diese |
+| Kategorie | Wert der Spalte „Kategorie" in neuen Tickets (z. B. `SAP`) |
+| Farbe | Kennfarbe in der App (`#0070F2` = SAP-Blau) |
 | Werk | Wert der Spalte „Werk" in neuen Tickets |
 | Bearbeiter | wird bei Eingang zugewiesen (Mails, `;`-getrennt) |
 | Gruppe | SharePoint-Gruppe der Bearbeiter; bei Archiv `*` = alle Bearbeiter-Gruppen |
@@ -79,10 +85,32 @@ Die App selbst hat keine Rechte-Logik, die man umgehen könnte – sie zeigt nur
 | Standard | Queue für unbekannte Domains (genau eine) |
 | Aktiv, Benachrichtigen, Reihenfolge | — |
 
+## Routing
+
+Reihenfolge – im Flow und in der App („Routing testen") dieselbe Regel (`queueFuerAbsender()`):
+
+1. Stichwort im Betreff **und** passende Domain (z. B. eine SAP-Queue nur für ein Werk)
+2. Stichwort im Betreff (z. B. **SAP** für alle Werke)
+3. Absender-Domain (Werk-Queues ohne Stichwort)
+4. Standard-Queue
+
+Melder wählen im Formular „Neues Ticket" den Bereich (IT-Support oder SAP); die App setzt das Stichwort in den Betreff. Hat eine Stichwort-Queue kein eigenes Werk, übernimmt das Ticket das Werk der Absender-Domain.
+
+## Haupt- und Untertickets
+
+Mehrere Tickets zum selben Thema (z. B. ein ausgefallener Drucker, gemeldet von fünf Leuten) werden **verknüpft, nicht verschmolzen**: Jedes Ticket behält seinen Melder, seine Nummer und seinen Verlauf. Die Spalte `Hauptticket` eines Untertickets enthält die Nummer des Haupttickets; es gibt nur eine Ebene.
+
+- **Erkennen:** Steht eine bekannte Ticketnummer im Betreff einer Mail, hängt der Flow die Mail an dieses Ticket statt ein neues anzulegen. In der App schlägt das Ticket mögliche Duplikate vor: Nummer im Betreff/Text, gleicher Melder mit ähnlichem Betreff (14 Tage), sehr ähnlicher Betreff anderer Melder (3 Tage – vermutlich eine Störung).
+- **Zusammenführen:** Ein Ticket wird Unterticket eines anderen; dessen Untertickets wandern mit. Die Zuständigkeit des Haupttickets wird übernommen, der Melder des Untertickets bekommt (optional) eine Mail.
+- **Benachrichtigen:** Eine Antwort am Hauptticket kann alle Melder der Untertickets erreichen – jeder bekommt eine eigene Mail mit **seiner** Ticketnummer (Antworten landen in seinem Ticket, Adressen sieht niemand sonst), und die Nachricht steht auch in seinem Verlauf. „Erledigt" am Hauptticket schließt auf Wunsch alle offenen Untertickets mit und informiert deren Melder.
+- **Wechseln:** Jedes Unterticket kann zum Hauptticket gemacht werden; das bisherige Hauptticket und die übrigen hängen sich darunter. „Lösen" macht ein Unterticket wieder eigenständig, „Gruppe auflösen" alle.
+- **Ansicht:** Der Verlauf des Haupttickets zeigt auch die Nachrichten der Untertickets („aus SCH-14"); im Posteingang stehen Untertickets eingeklappt unter ihrem Hauptticket („+3").
+- Verknüpfen über Queue-Grenzen geht, wenn man in beiden Queues Bearbeiter ist.
+
 ## Ticketnummern und Mail-Verlauf
 
 - Nummer = `Kennung-ID` der Liste (`SCH-12`). IDs zählen je Liste.
-- Die Eingangsbestätigung trägt `[#SCH-12]` im Betreff. Antworten darauf erkennt der Flow und hängt sie als **Kommentar** an (zitierter Verlauf wird abgeschnitten), ergänzt Anhänge, öffnet „Erledigt"/„Warten auf Rückmeldung" wieder und informiert die Bearbeiter.
+- Die Eingangsbestätigung trägt `[#SCH-12]` im Betreff. Antworten darauf – und neue Mails, die eine bekannte Nummer wie „SCH-12" im Betreff nennen – erkennt der Flow und hängt sie als **Kommentar** an (zitierter Verlauf wird abgeschnitten), ergänzt Anhänge, öffnet „Erledigt"/„Warten auf Rückmeldung" wieder und informiert die Bearbeiter.
 - Alte Bestätigungen („Neues Ticket: 1234") werden als `ALT-1234` erkannt, solange das Ticket im Archiv steht.
 - **Verlauf** (SharePoint-Kommentare) ist für den Melder sichtbar. **Interne Notizen** stehen in einer eigenen Liste, die Melder nicht lesen dürfen.
 - Bearbeiter antworten in der App: Kommentar + Mail aus dem eigenen Postfach mit Reply-To auf das Ticketpostfach – die Antwort des Melders landet wieder im Ticket.

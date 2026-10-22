@@ -59,7 +59,14 @@ export const FELDER = Object.freeze({
   melderMail: 'E_x002d_Mail_x002d_Adresse',
   gemeldetAm: 'DateReported',
   werk: 'Werk',
+  // Verknüpfung: Nummer des Haupttickets („SCH-12"); leer = eigenständig oder selbst Hauptticket.
+  hauptticket: 'Hauptticket',
 });
+
+/** Spalten, die das Ticketsystem selbst ergänzt (Basisliste und alle Ticketlisten). */
+export const ZUSATZ_SPALTEN = Object.freeze([
+  { name: 'Hauptticket', xml: '<Field Type="Text" Name="Hauptticket" StaticName="Hauptticket" DisplayName="Hauptticket" MaxLength="20" Indexed="TRUE" Description="Nummer des Haupttickets, wenn dieses Ticket mit einem anderen zusammengeführt wurde (z. B. SCH-12)." />' },
+]);
 
 /** Spalten, die es geben KANN – erkannt über internen oder Anzeigenamen. */
 export const OPTIONALE_FELDER = Object.freeze({
@@ -78,6 +85,9 @@ export const STATUS = Object.freeze([
   { wert: 'Abgebrochen', offen: false, farbe: 'grau' },
   { wert: 'Weitergeleitet', offen: false, farbe: 'grau' },
 ]);
+
+/** Farbe der SAP-Queue in der Startaufstellung (SAP-Blau). */
+export const SAP_BLAU = '#0070F2';
 
 export const PRIORITAETEN = Object.freeze(['Kritisch', 'Hoch', 'Normal', 'Niedrig']);
 
@@ -98,6 +108,12 @@ export const KONFIG_SPALTEN = Object.freeze([
   { name: 'ListenId', text: {} },
   { name: 'ListenUrl', text: {} },
   { name: 'Domains', text: { allowMultipleLines: true, linesForEditing: 3 } },
+  // Stichwörter im Betreff (z. B. „SAP") – gehen vor der Domain. Mit Domains: nur für diese.
+  { name: 'Stichwoerter', text: { allowMultipleLines: true, linesForEditing: 2 } },
+  // Wert für die Spalte „Kategorie" neuer Tickets dieser Queue (z. B. „SAP").
+  { name: 'Kategorie', text: {} },
+  // Kennfarbe der Queue in der App (z. B. SAP-Blau #0070F2).
+  { name: 'Farbe', text: {} },
   { name: 'Werk', text: {} },
   { name: 'Bearbeiter', text: { allowMultipleLines: true, linesForEditing: 3 } },
   { name: 'Gruppe', text: {} },

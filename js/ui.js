@@ -119,6 +119,14 @@ export const personen = liste => liste?.length
   ? liste.map(p => `<span class="person">${avatar(p.name, p.mail || p.name)}<span>${esc(p.name)}</span></span>`).join('')
   : '<span class="leise">niemand</span>';
 
+/**
+ * Kennung einer Queue als kleines Abzeichen in der Queue-Farbe (nur geprüfte #RRGGBB-Werte).
+ * Ohne eigene Farbe nur mit `immer` – die Ticketnummer nennt die Kennung ja schon.
+ */
+export const queuePill = (q, immer = false) => q && (immer || /^#[0-9a-f]{6}$/i.test(q.farbe || ''))
+  ? `<span class="queue-pill"${/^#[0-9a-f]{6}$/i.test(q.farbe || '') ? ` style="background:${q.farbe};color:#fff"` : ''} title="${esc(q.name)}">${esc(q.kennung)}</span>`
+  : '';
+
 export function leer(text, symbol = '📭') {
   return `<div class="leer"><div class="leer-symbol">${symbol}</div><p>${esc(text)}</p></div>`;
 }

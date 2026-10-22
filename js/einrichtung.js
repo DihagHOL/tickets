@@ -13,7 +13,7 @@
  * Rechte werden nie entzogen, bevor die Soll-Rechte vergeben sind – so sperrt sich
  * niemand aus. Die Websitebesitzer stehen immer im Soll.
  */
-import { KONFIG, KONFIG_SPALTEN, SOLL_LISTENEINSTELLUNGEN, SOLL_NOTIZEINSTELLUNGEN, NOTIZ_ENDUNG, STATUS, PRIORITAETEN, FELDER } from './config.js';
+import { KONFIG, KONFIG_SPALTEN, SOLL_LISTENEINSTELLUNGEN, SOLL_NOTIZEINSTELLUNGEN, NOTIZ_ENDUNG, STATUS, PRIORITAETEN, FELDER, ZUSATZ_SPALTEN } from './config.js';
 import { sp, spAlle, graph, guid, lit } from './api.js';
 import {
   sollRechte, sollKonfigRechte, rechteAbgleich, einstellungsAbgleich, istAusRollenzuweisungen, bearbeitungsMaske,
@@ -56,6 +56,7 @@ export async function konfigPruefen() {
 export async function konfigAbgleichen(protokoll = () => {}) {
   const l = await listeLesen(KONFIG.konfigListe);
   if (!l) throw new Error('Konfigurationsliste fehlt');
+  for (const n of await konfigSpaltenSicherstellen()) protokoll(`Spalte ${n} ergänzt`);
   await einstellungenAnwenden(l.Id, { NoCrawl: true, EnableVersioning: true });
   await rechteAnwenden(l.Id, sollKonfigRechte(sollKontext()), protokoll);
 }
@@ -64,8 +65,38 @@ async function konfigListeId() {
   return (await sp(`_api/web/lists/getbytitle(${lit(KONFIG.konfigListe)})?$select=Id`)).Id;
 }
 
+/** Spalten der Konfigurationsliste nachrüsten (ältere Stände kennen z. B. „Stichwoerter" noch nicht). */
+export async function konfigSpaltenSicherstellen() {
+  const id = await konfigListeId();
+  const r = await graph(`/sites/${zustand.site.graphId}/lists/${id}/columns?$select=name`);
+  const da = new Set((r?.value || []).map(c => c.name));
+  const neu = [];
+  for (const c of KONFIG_SPALTEN.filter(c => !da.has(c.name))) {
+    await graph(`/sites/${zustand.site.graphId}/lists/${id}/columns`, { method: 'POST', body: c });
+    neu.push(c.name);
+  }
+  return neu;
+}
+
+/** Spalten, die das Ticketsystem braucht (z. B. „Hauptticket"), in einer Ticketliste ergänzen. */
+export async function zusatzSpaltenSicherstellen(listId, protokoll = () => {}) {
+  const da = new Set((await spAlle(`_api/web/lists(${guid(listId)})/fields?$select=InternalName`)).map(f => f.InternalName));
+  for (const z of ZUSATZ_SPALTEN.filter(z => !da.has(z.name))) {
+    await sp(`_api/web/lists(${guid(listId)})/fields/createfieldasxml`, {
+      method: 'POST', verbose: true,
+      body: { parameters: { __metadata: { type: 'SP.XmlSchemaFieldCreationInformation' }, SchemaXml: z.xml, Options: 8 | 16 | 1 } },
+    });
+    protokoll(`Spalte ${z.name} ergänzt`);
+  }
+}
+
 export async function queueSpeichern(q) {
   const id = await konfigListeId();
+  // Gibt es die Liste schon (z. B. das Archiv „Tickets"), gleich verknüpfen – ohne Rechte anzufassen.
+  if (q.modus !== 'Hinweis' && q.liste && !q.listId) {
+    const l = await listeLesen(q.liste);
+    if (l) q = { ...q, listId: l.Id, listUrl: l.RootFolder?.ServerRelativeUrl || '' };
+  }
   const fields = queueZuFeldern(q);
   if (q.itemId) await graph(`/sites/${zustand.site.graphId}/lists/${id}/items/${q.itemId}/fields`, { method: 'PATCH', body: fields });
   else await graph(`/sites/${zustand.site.graphId}/lists/${id}/items`, { method: 'POST', body: { fields } });
@@ -302,6 +333,10 @@ export async function queueEinrichten(q, protokoll = () => {}) {
   protokoll(`Berechtigungsstufe „${KONFIG.stufeBearbeitung}" ok`);
   const ctx = sollKontext();
 
+  // Zusatzspalten zuerst in der Basisliste – neue Queue-Listen übernehmen sie von dort.
+  const basis = await listeLesen(KONFIG.basisListe);
+  if (basis) await zusatzSpaltenSicherstellen(basis.Id, t => protokoll(`${KONFIG.basisListe}: ${t}`));
+
   let liste;
   if (q.modus === 'Archiv') {
     const l = await listeLesen(q.liste);
@@ -310,6 +345,13 @@ export async function queueEinrichten(q, protokoll = () => {}) {
   } else {
     liste = await ticketListeAnlegen(q, protokoll);
     liste.fehler.forEach(f => protokoll('⚠ Spalte ' + f));
+  }
+  await zusatzSpaltenSicherstellen(liste.id, protokoll);
+  // Alle Bearbeiter-Gruppen vorab anlegen: Das Soll verweist auch auf die Gruppen der
+  // anderen Queues (Übergabe, Archiv „*"), und eine fehlende Gruppe bräche den Abgleich ab.
+  for (const x of ctx.queues.filter(x => x.aktiv && x.modus === 'Ticket' && x.gruppe)) {
+    const vorher = await gruppeLesen(x.gruppe);
+    if (!vorher) { await gruppeSicherstellen(x.gruppe, `Bearbeiter der Ticket-Queue ${x.name}`); protokoll(`Gruppe „${x.gruppe}" angelegt`); }
   }
   if (q.gruppe && q.gruppe !== '*') {
     await gruppeSicherstellen(q.gruppe, `Bearbeiter der Ticket-Queue ${q.name}`);

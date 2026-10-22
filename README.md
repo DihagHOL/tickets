@@ -2,7 +2,8 @@
 
 Ticketsystem der DIHAG-IT auf GitHub Pages – Daten in SharePoint (`/sites/ticket`), Mail-Eingang über Power Automate.
 
-- **Queues je Werk** mit eigenen SharePoint-Berechtigungen statt versteckender Ansichten
+- **Queues je Werk und eine eigene SAP-Queue** mit eigenen SharePoint-Berechtigungen statt versteckender Ansichten; Übergabe zwischen Teams
+- **Haupt- und Untertickets**: Duplikate erkennen, zusammenführen, Hauptticket wechseln – Antworten und „Erledigt" erreichen alle Melder
 - **Melder sehen nur ihre eigenen Tickets** (SharePoint „nur eigene Elemente", serverseitig)
 - **Verwaltung in der App**: Queues, Routing nach Absender-Domain, Bearbeiter-Gruppen, Rechte-Abgleich, Migration
 - **Ein** konfigurationsgetriebener Flow statt kopierter Zweige – neues Werk = neue Zeile in der App

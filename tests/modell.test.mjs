@@ -88,10 +88,12 @@ const ctx = {
 const sollSch = M.sollRechte({ ...q('SCH'), gruppe: 'Tickets SCH – Bearbeiter' }, ctx);
 gleich(sollSch.map(s => `${s.wert}=${s.rolle.anzeige}`), [
   'Ticket – Besitzer=Vollzugriff', 'i:0#.f|membership|ticket@dihag.com=Vollzugriff',
-  'Tickets SCH – Bearbeiter=Ticket-Bearbeitung', `${KONFIG.melderClaim}=Lesen`,
-], 'Soll-Rechte Queue-Liste');
+  'Tickets SCH – Bearbeiter=Ticket-Bearbeitung', 'Tickets SHB – Bearbeiter=Mitwirken', `${KONFIG.melderClaim}=Lesen`,
+], 'Soll-Rechte Queue-Liste (inkl. Übergabe aus aktiven anderen Queues, nicht aus inaktiven)');
+gleich(M.sollRechte({ ...q('SCH'), gruppe: 'Tickets SCH – Bearbeiter' }, { ...ctx, uebergabe: false }).length, 4, 'Übergabe abschaltbar');
+gleich(M.sollRechte({ ...q('SCH'), gruppe: 'G' }, ctx, 'notizen').some(s => s.rolle.typ === 3), false, 'Notizliste: keine Übergabe-Rechte');
 gleich(M.sollRechte({ ...q('SCH'), gruppe: 'G' }, ctx, 'notizen').some(s => s.rolle.typ === 2), false, 'Notizliste: keine Melder');
-gleich(M.sollRechte({ ...q('SCH'), gruppe: 'G' }, { ...ctx, melderSehen: false }).length, 3, 'Melder abschaltbar');
+gleich(M.sollRechte({ ...q('SCH'), gruppe: 'G' }, { ...ctx, melderSehen: false, uebergabe: false }).length, 3, 'Melder abschaltbar');
 gleich(M.sollRechte({ ...q('ALT'), modus: 'Archiv', gruppe: '*' }, ctx).map(s => s.wert).slice(2), ['Tickets SCH – Bearbeiter', 'Tickets SHB – Bearbeiter'], 'Archiv „*": alle aktiven Bearbeiter-Gruppen, keine Melder');
 gleich(M.sollRechte({ ...q('ALT'), modus: 'Archiv', gruppe: '' }, ctx).length, 2, 'Archiv leer: nur Admins + Flow-Konto');
 gleich(M.sollRechte({ ...q('GIE'), modus: 'Hinweis' }, ctx), [], 'Hinweis-Queue: keine Liste, kein Soll');
@@ -104,7 +106,7 @@ const ist = M.istAusRollenzuweisungen([
 ]);
 const ab = M.rechteAbgleich(sollSch, ist);
 gleich(ab.ok.map(s => s.wert), ['Ticket – Besitzer', 'Tickets SCH – Bearbeiter'], 'Abgleich: vorhandene Soll-Rechte (Name ohne Groß/klein)');
-gleich(ab.fehlt.map(s => s.wert), ['i:0#.f|membership|ticket@dihag.com', KONFIG.melderClaim], 'Abgleich: fehlende Rechte');
+gleich(ab.fehlt.map(s => s.wert), ['i:0#.f|membership|ticket@dihag.com', 'Tickets SHB – Bearbeiter', KONFIG.melderClaim], 'Abgleich: fehlende Rechte');
 gleich(ab.zuviel.map(z => `${z.titel}/${z.rolle.name}`), ['Tickets SCH – Bearbeiter/Mitwirken', 'Ticket – Mitglieder/Bearbeiten'], 'Abgleich: zu viel (beschränkter Zugriff zählt nicht)');
 const konfSoll = M.sollKonfigRechte(ctx);
 gleich(konfSoll.map(s => `${s.anzeige}=${s.rolle.anzeige}`), ['Ticket – Besitzer=Vollzugriff', 'ticket@dihag.com=Lesen', 'Jeder=Lesen'], 'Konfigurationsliste: alle lesen, nur Admins ändern');
@@ -160,6 +162,78 @@ gleich(verlauf.length, 2, 'Verlauf: Anzahl Wochen');
 gleich(verlauf[1].eingang, 3, 'Verlauf: Eingang aktuelle Woche');
 gleich(M.kalenderwoche(new Date('2026-09-25T12:00:00')), 39, 'Kalenderwoche');
 gleich(M.zaehleNach(liste, x => x.prio), [{ wert: 'Hoch', anzahl: 1 }, { wert: 'Kritisch', anzahl: 1 }, { wert: 'Normal', anzahl: 1 }], 'Zählen nach Priorität');
+
+// ── Stichwort-Routing (SAP) ──
+const mitSap = [
+  ...queues,
+  { ...q('SAP'), stichwoerter: ['SAP', 'S/4HANA'], reihenfolge: 5 },
+  { ...q('SAPSCH'), stichwoerter: ['SAP'], domains: ['schmie-guss.de'], reihenfolge: 6 },
+];
+gleich(M.queueFuerAbsender(mitSap, 'x@dihag.com', 'SAP: Berechtigung Einkauf')?.kennung, 'SAP', 'SAP-Stichwort schlägt Domain');
+gleich(M.queueFuerAbsender(mitSap, 'x@schmie-guss.de', 'AW: sap Transaktion')?.kennung, 'SAPSCH', 'Stichwort + Domain vor Stichwort allein (Groß/klein egal)');
+gleich(M.queueFuerAbsender(mitSap, 'x@unbekannt.de', 'Problem mit S/4HANA')?.kennung, 'SAP', 'zweites Stichwort');
+gleich(M.queueFuerAbsender(mitSap, 'x@schmie-guss.de', 'Drucker')?.kennung, 'SCH', 'ohne Stichwort: Werk nach Domain');
+gleich(M.queueFuerAbsender(mitSap, 'x@schmie-guss.de')?.kennung, 'SCH', 'ohne Betreff wie bisher');
+gleich(M.stichwoerterAusText('SAP; S/4HANA\nsap, Fiori'), ['SAP', 'S/4HANA', 'Fiori'], 'Stichwörter: Trenner, ohne Dubletten');
+gleich(M.queueZuFeldern({ ...q('SAP'), stichwoerter: ['SAP', 'Fiori'], farbe: '#0070F2', kategorie: 'SAP' }).Stichwoerter, 'SAP;Fiori', 'Stichwörter → Feld');
+gleich(M.queueAusFeldern({ fields: { Farbe: 'red;background:url(x)' } }).farbe, '', 'Farbe nur als #RRGGBB (landet in style-Attributen)');
+ok(!M.pruefeQueues([{ ...q('SCH'), domains: ['a.de'], gruppe: 'G', listId: 'x' }, { ...q('SAP'), stichwoerter: ['SAP'], domains: ['a.de'], gruppe: 'G', listId: 'x' }]).some(b => b.schwere === 'fehler'), 'Stichwort-Queue darf Domain mit Werk-Queue teilen');
+
+// ── Ticketnummer im Betreff ohne Klammern ──
+const kenn = ['SCH', 'SHB', 'SAP', 'ALT'];
+gleich(M.tokenAusBetreff('Bezug SCH-12: Drucker', 'ALT', kenn), 'SCH-12', 'Nummer ohne Klammern erkannt');
+gleich(M.tokenAusBetreff('(sap-7) noch offen?', 'ALT', kenn), 'SAP-7', 'in Klammern, Kleinschreibung');
+gleich(M.tokenAusBetreff('COVID-19 Regeln', 'ALT', kenn), '', 'unbekannte Kennung ignoriert');
+gleich(M.tokenAusBetreff('SCH-12-3 Teil', 'ALT', kenn), '', 'kein Treffer bei zwei Bindestrichen');
+gleich(M.tokenAusBetreff('SCH-12a', 'ALT', kenn), '', 'kein Treffer bei Buchstaben in der Nummer');
+gleich(M.tokenAusBetreff('[#SHB-2] Re: SCH-12', 'ALT', kenn), 'SHB-2', 'Klammer-Token hat Vorrang');
+gleich(M.tokenAusBetreff('Bezug SCH-12'), '', 'ohne Kennungsliste nur Klammer-Token (wie bisher)');
+gleich(M.betreffWoerter('AW: [#SCH-1] (Test), ok!'), ['AW', 'SCH-1', 'TEST', 'OK'], 'Betreff → Wörter');
+gleich(M.nummernImText('Siehe SCH-012 und sap-7, nicht XYZ-1. Neues Ticket: 99', kenn), ['SCH-12', 'SAP-7', 'ALT-99'], 'Nummern im Text');
+gleich(M.nummernImText('ASCH-12 SCH-123456789012'), [], 'keine Teiltreffer, keine überlangen Nummern');
+
+// ── Haupt-/Untertickets ──
+const fam = [
+  mk(10, { nummer: 'SCH-10', melderMail: 'a@x.de' }),
+  mk(11, { nummer: 'SCH-11', hauptticket: 'SCH-10', melderMail: 'b@x.de' }),
+  mk(12, { nummer: 'SCH-12', hauptticket: 'SCH-10', melderMail: 'a@x.de' }),
+  mk(13, { nummer: 'SCH-13', melderMail: 'c@x.de' }),
+  mk(14, { nummer: 'SCH-14', hauptticket: 'SCH-13', melderMail: 'd@x.de' }),
+];
+const nr = n => fam.find(x => x.nummer === n);
+gleich(M.untertickets('SCH-10', fam).map(x => x.nummer), ['SCH-11', 'SCH-12'], 'Untertickets');
+gleich(M.planZusammenfuehren(nr('SCH-13'), nr('SCH-10'), fam), { haupt: 'SCH-10', aenderungen: [{ nummer: 'SCH-13', hauptticket: 'SCH-10' }, { nummer: 'SCH-14', hauptticket: 'SCH-10' }] }, 'Zusammenführen: Untertickets wandern mit (eine Ebene)');
+gleich(M.planZusammenfuehren(nr('SCH-13'), nr('SCH-11'), fam).haupt, 'SCH-10', 'Ziel ist ein Unterticket → dessen Hauptticket');
+let fehlerText = '';
+try { M.planZusammenfuehren(nr('SCH-10'), nr('SCH-11'), fam); } catch (e) { fehlerText = e.message; }
+ok(/bereits Unterticket/.test(fehlerText), 'kein Kreis: Hauptticket nicht unter eigenes Unterticket');
+try { M.planZusammenfuehren(nr('SCH-11'), nr('SCH-10'), fam); fehlerText = ''; } catch (e) { fehlerText = e.message; }
+ok(/bereits Unterticket/.test(fehlerText), 'schon verknüpft → Fehler');
+gleich(M.planHauptWechseln(nr('SCH-12'), fam), { haupt: 'SCH-12', aenderungen: [{ nummer: 'SCH-12', hauptticket: '' }, { nummer: 'SCH-10', hauptticket: 'SCH-12' }, { nummer: 'SCH-11', hauptticket: 'SCH-12' }] }, 'Hauptticket wechseln');
+gleich(M.planLoesen(nr('SCH-11'), fam).aenderungen, [{ nummer: 'SCH-11', hauptticket: '' }], 'Unterticket lösen');
+gleich(M.planLoesen(nr('SCH-10'), fam).aenderungen.map(a => a.nummer), ['SCH-11', 'SCH-12'], 'Gruppe auflösen');
+gleich(M.melderAdressen([nr('SCH-10'), nr('SCH-11'), nr('SCH-12')]), ['a@x.de', 'b@x.de'], 'Melder der Gruppe ohne Dubletten');
+const t2 = M.ticketAusSp({ Id: 5, Hauptticket: 'sch-010' }, qSch);
+gleich(t2.hauptticket, 'SCH-10', 'Hauptticket normalisiert');
+gleich(M.ticketAusSp({ Id: 5, Hauptticket: 'Quatsch' }, qSch).hauptticket, '', 'ungültiges Hauptticket → leer');
+
+// ── Duplikate ──
+gleich(M.aehnlichkeit('Drucker Halle 2 druckt nicht', 'AW: Drucker in Halle 2 druckt nicht mehr'), 1, 'Ähnlichkeit ignoriert AW/Stoppwörter');
+gleich(M.aehnlichkeit('Drucker Halle 2', 'VPN Zugang'), 0, 'keine Ähnlichkeit');
+const dup = [
+  mk(20, { nummer: 'SCH-20', titel: 'Drucker Halle 2 druckt nicht', melderMail: 'a@x.de' }),
+  mk(21, { nummer: 'SCH-21', titel: 'Bezug SCH-20', melderMail: 'b@x.de', beschreibung: '<p>siehe auch SHB-3</p>' }),
+  mk(22, { nummer: 'SCH-22', titel: 'AW: Drucker in Halle 2 druckt nicht mehr', melderMail: 'a@x.de' }),
+  mk(23, { nummer: 'SCH-23', titel: 'Drucker Halle 2 druckt nicht', melderMail: 'z@x.de' }),
+  mk(24, { nummer: 'SHB-3', titel: 'Monitor', melderMail: 'q@x.de' }),
+  mk(25, { nummer: 'SCH-25', titel: 'Drucker Halle 2 druckt nicht', melderMail: 'a@x.de', status: 'Erledigt' }),
+];
+const vor = M.duplikatVorschlaege(dup[1], dup, { kennungen: kenn, jetzt });
+gleich(vor.map(v => v.ticket.nummer), ['SCH-20', 'SHB-3'], 'Duplikat über Nummer in Betreff und Text');
+const vor2 = M.duplikatVorschlaege(dup[0], dup, { kennungen: kenn, jetzt });
+gleich(vor2.map(v => `${v.ticket.nummer}:${v.grund}`), ['SCH-22:gleicher Melder, ähnlicher Betreff', 'SCH-23:ähnlicher Betreff von anderen – Störung?'], 'Duplikate über Melder/Ähnlichkeit, erledigte nicht');
+const verknuepft = dup.map(x => x.nummer === 'SCH-22' ? { ...x, hauptticket: 'SCH-20' } : x);
+ok(!M.duplikatVorschlaege(verknuepft[0], verknuepft, { kennungen: kenn }).some(v => v.ticket.nummer === 'SCH-22'), 'bereits verknüpfte nicht vorschlagen');
 
 // ── Navigation ──
 gleich(M.parseRoute('#/t/sch-12'), { seite: 'ticket', nummer: 'SCH-12' }, 'Route: Ticket');

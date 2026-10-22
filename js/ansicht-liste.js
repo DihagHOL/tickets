@@ -6,7 +6,7 @@ import { zustand, ladeAlle, meineListen } from './daten.js';
 import { filtereTickets, sortiereTickets, istOffen, istUeberfaellig, istMeineAnfrage, kennzahlen } from './modell.js';
 import { meineMail } from './auth.js';
 import { esc, relativ, datumZeit } from './text.js';
-import { $, aktion, statusBadge, prioBadge, personen, leer, ladeAnzeige, meldung } from './ui.js';
+import { $, aktion, statusBadge, prioBadge, personen, leer, ladeAnzeige, meldung, queuePill } from './ui.js';
 
 const SPEICHER = 'tickets.filter.v1';
 const SICHTEN = [
@@ -18,7 +18,7 @@ const SICHTEN = [
   { id: 'alle', text: 'Alle', f: { status: 'alle' } },
 ];
 
-let filter = { sicht: 'offen', kennung: '', suche: '', sort: 'neu', prio: '' };
+let filter = { sicht: 'offen', kennung: '', suche: '', sort: 'neu', prio: '', unterZeigen: false };
 try { filter = { ...filter, ...JSON.parse(sessionStorage.getItem(SPEICHER) || '{}') }; } catch { /* gesperrt */ }
 const merke = () => { try { sessionStorage.setItem(SPEICHER, JSON.stringify(filter)); } catch { /* egal */ } };
 let anzahl = 200;
@@ -35,7 +35,6 @@ async function zeigePosteingang(main, aktuell, neu = false) {
   const listen = meineListen('bearbeiter');
   if (!listen.length) { main.innerHTML = leer('Du bist in keiner Queue als Bearbeiter eingetragen.'); return; }
   if (filter.kennung && !listen.some(l => l.queue.kennung === filter.kennung)) filter.kennung = '';
-  const archiv = filter.kennung && listen.find(l => l.queue.kennung === filter.kennung)?.queue.modus === 'Archiv';
 
   main.innerHTML = `
     <div class="seitenkopf">
@@ -47,6 +46,7 @@ async function zeigePosteingang(main, aktuell, neu = false) {
           <option value="prio"${filter.sort === 'prio' ? ' selected' : ''}>Nach Priorität</option>
           <option value="geaendert"${filter.sort === 'geaendert' ? ' selected' : ''}>Zuletzt geändert</option>
         </select>
+        <label class="check klein"><input type="checkbox" data-aendern="pe-unter"${filter.unterZeigen ? ' checked' : ''}/> Untertickets einzeln</label>
         <button class="knopf" data-aktion="pe-neu-laden" title="Neu laden">↻ Aktualisieren</button>
       </div>
     </div>
@@ -54,27 +54,31 @@ async function zeigePosteingang(main, aktuell, neu = false) {
     <div class="sichten" role="tablist" id="pe-sichten"></div>
     <div id="pe-inhalt">${ladeAnzeige('Lade Tickets …')}</div>`;
 
-  const { tickets, fehler } = await ladeAlle({ mindestens: 'bearbeiter', mitArchiv: archiv, neu });
+  // Das Archiv (bisherige Liste) gehört dazu: Bis der neue Flow läuft, landen dort die neuen Tickets.
+  const { tickets, fehler } = await ladeAlle({ mindestens: 'bearbeiter', mitArchiv: true, neu });
   if (!aktuell()) return;
   fehler.forEach(f => meldung('Nicht geladen – ' + f, 'fehler'));
-  _tickets = archiv ? tickets.filter(t => t.kennung === filter.kennung) : tickets;
+  _tickets = tickets;
   zeichneQueues(listen, tickets);
   zeichne();
 }
 
 function zeichneQueues(listen, tickets) {
   const offen = k => tickets.filter(t => t.kennung === k && istOffen(t.status)).length;
-  const chip = (k, text, zahl) => `<button class="chip${filter.kennung === k ? ' aktiv' : ''}" data-aktion="pe-queue" data-kennung="${esc(k)}">${esc(text)}${zahl != null ? ` <span class="zahl">${zahl}</span>` : ''}</button>`;
-  const alleOffen = tickets.filter(t => istOffen(t.status) && keinArchiv(t)).length;
-  $('#pe-queues').innerHTML = chip('', 'Alle Queues', alleOffen)
-    + listen.map(l => chip(l.queue.kennung, l.queue.modus === 'Archiv' ? `${l.queue.name} (Archiv)` : l.queue.name, l.queue.modus === 'Archiv' ? null : offen(l.queue.kennung))).join('');
+  const chip = (k, text, zahl, farbe) => `<button class="chip${filter.kennung === k ? ' aktiv' : ''}" data-aktion="pe-queue" data-kennung="${esc(k)}">${farbe ? `<span class="punkt" style="background:${farbe}"></span>` : ''}${esc(text)} <span class="zahl">${zahl}</span></button>`;
+  $('#pe-queues').innerHTML = chip('', 'Alle Queues', tickets.filter(t => istOffen(t.status)).length)
+    + listen.map(l => chip(l.queue.kennung, l.queue.modus === 'Archiv' ? `${l.queue.name} (Archiv)` : l.queue.name, offen(l.queue.kennung), l.queue.farbe)).join('');
 }
-const keinArchiv = t => zustand.listen.get(t.kennung)?.queue.modus !== 'Archiv';
 
 function zeichne() {
   if (!$('#pe-inhalt')) return; // inzwischen andere Seite (verzögerte Sucheingabe)
   const sicht = SICHTEN.find(s => s.id === filter.sicht) || SICHTEN[0];
-  const basis = filter.kennung ? _tickets.filter(t => t.kennung === filter.kennung) : _tickets.filter(keinArchiv);
+  let basis = filter.kennung ? _tickets.filter(t => t.kennung === filter.kennung) : _tickets;
+  // Untertickets stehen unter ihrem Hauptticket – sofern ich das Hauptticket sehe.
+  const sichtbar = new Set(_tickets.map(t => t.nummer));
+  const unterZahl = new Map();
+  for (const t of _tickets) if (t.hauptticket && sichtbar.has(t.hauptticket)) unterZahl.set(t.hauptticket, (unterZahl.get(t.hauptticket) || 0) + 1);
+  if (!filter.unterZeigen && !filter.suche) basis = basis.filter(t => !(t.hauptticket && sichtbar.has(t.hauptticket)));
   const f = { ...sicht.f, suche: filter.suche, prio: filter.prio };
   const zahlen = Object.fromEntries(SICHTEN.map(s => [s.id, filtereTickets(basis, { ...s.f, suche: filter.suche }, meineMail()).length]));
   $('#pe-sichten').innerHTML = SICHTEN.map(s =>
@@ -87,16 +91,20 @@ function zeichne() {
     return;
   }
   const jetzt = new Date();
-  const zeilen = treffer.slice(0, anzahl).map(t => `
+  const zeilen = treffer.slice(0, anzahl).map(t => {
+    const q = zustand.listen.get(t.kennung)?.queue;
+    const n = unterZahl.get(t.nummer);
+    return `
     <tr data-aktion="oeffne" data-nr="${esc(t.nummer)}" tabindex="0" class="${istUeberfaellig(t, jetzt) ? 'ueberfaellig' : ''}">
-      <td class="nr"><a href="#/t/${esc(t.nummer)}">${esc(t.nummer)}</a></td>
-      <td class="titel"><div>${esc(t.titel || '(ohne Betreff)')}</div><div class="leise klein">${esc(t.melder?.name || t.melderMail || '')}</div></td>
+      <td class="nr"><a href="#/t/${esc(t.nummer)}">${esc(t.nummer)}</a>${!filter.kennung ? queuePill(q) : ''}</td>
+      <td class="titel"><div>${esc(t.titel || '(ohne Betreff)')}${n ? ` <span class="badge st-blau" title="${n} Untertickets – deren Melder werden mitinformiert">+${n}</span>` : ''}${t.hauptticket ? ` <span class="leise klein">↳ ${esc(t.hauptticket)}</span>` : ''}</div><div class="leise klein">${esc(t.melder?.name || t.melderMail || '')}</div></td>
       <td>${statusBadge(t.status)}</td>
       <td>${prioBadge(t.prio)}</td>
       <td class="personen-zelle">${personen(t.bearbeiter)}</td>
       <td class="zeit" title="${esc(datumZeit(t.gemeldetAm))}">${esc(relativ(t.gemeldetAm, jetzt))}</td>
       <td class="anh">${t.anhaenge ? '📎' : ''}</td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
   ziel.innerHTML = `
     <div class="tabelle-rahmen"><table class="tickets">
       <thead><tr><th>Nr.</th><th>Titel / Melder</th><th>Status</th><th>Prio</th><th>Bearbeiter</th><th>Gemeldet</th><th><span class="sr">Anhänge</span></th></tr></thead>
@@ -106,17 +114,15 @@ function zeichne() {
 }
 
 aktion('oeffne', el => { location.hash = '#/t/' + el.dataset.nr; });
-aktion('pe-queue', async el => {
-  const vorher = filter.kennung;
+aktion('pe-queue', el => {
   filter.kennung = el.dataset.kennung; merke(); anzahl = 200;
-  const archivWechsel = [vorher, filter.kennung].some(k => k && zustand.listen.get(k)?.queue.modus === 'Archiv');
-  if (archivWechsel) return zeigePosteingang($('#hauptinhalt'), () => true);
   zeichneQueues(meineListen('bearbeiter'), _tickets);
   zeichne();
 });
 aktion('pe-sicht', el => { filter.sicht = el.dataset.sicht; merke(); anzahl = 200; zeichne(); });
 aktion('pe-suche', el => { filter.suche = el.value; merke(); zeichne(); });
 aktion('pe-sort', el => { filter.sort = el.value; merke(); zeichne(); });
+aktion('pe-unter', el => { filter.unterZeigen = el.checked; merke(); zeichne(); });
 aktion('pe-mehr', () => { anzahl += 300; zeichne(); });
 aktion('pe-neu-laden', () => zeigePosteingang($('#hauptinhalt'), () => true, true));
 

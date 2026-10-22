@@ -1,21 +1,21 @@
 /**
  * Verwaltung (nur Websitebesitzer): Queues · Rechte & Einrichtung · Migration · Eingang
  */
-import { KONFIG, FELDER, NOTIZ_ENDUNG } from './config.js';
+import { KONFIG, FELDER, NOTIZ_ENDUNG, SAP_BLAU } from './config.js';
 import { zustand, ladeQueues } from './daten.js';
 import { spAlle, guid } from './api.js';
 import {
-  queueAusFeldern, pruefeQueues, standardNamen, queueFuerAbsender, KENNUNG_MUSTER, MODI, domainsAusText, mailsAusText,
+  queueAusFeldern, pruefeQueues, standardNamen, queueFuerAbsender, KENNUNG_MUSTER, MODI, domainsAusText, mailsAusText, stichwoerterAusText,
   istOffen, ticketNummer,
 } from './modell.js';
 import {
   konfigListeAnlegen, queueSpeichern, queueLoeschen, stufePruefen, stufeSicherstellen, queuePruefen, queueEinrichten,
   gruppeLesen, gruppeSicherstellen, mitgliedHinzufuegen, mitgliedEntfernen, auswahlAngleichen, sollKontext,
-  konfigPruefen, konfigAbgleichen,
+  konfigPruefen, konfigAbgleichen, konfigSpaltenSicherstellen,
 } from './einrichtung.js';
 import { kopiereTicket, inPapierkorb } from './kopie.js';
 import { esc } from './text.js';
-import { $, aktion, dialog, meldung, beschaeftigt, bestaetigen, ladeAnzeige, leer } from './ui.js';
+import { $, aktion, dialog, meldung, beschaeftigt, bestaetigen, ladeAnzeige, leer, queuePill } from './ui.js';
 import { personenwahl, leseAuswahl } from './personenwahl.js';
 
 const BEREICHE = [
@@ -32,12 +32,21 @@ export async function zeige(main, route, aktuell) {
     <div id="v-inhalt">${ladeAnzeige()}</div>`;
   const ziel = $('#v-inhalt');
   if (zustand.konfigFehlt) { zeigeStart(ziel); return; }
+  // Ältere Konfigurationslisten um neue Spalten (Stichwörter, Kategorie, Farbe) ergänzen – einmal je Sitzung.
+  if (!_spaltenGeprueft) {
+    _spaltenGeprueft = true;
+    try {
+      const neu = await konfigSpaltenSicherstellen();
+      if (neu.length) { meldung(`Konfiguration ergänzt: ${neu.join(', ')}`, 'info'); await ladeQueues(); }
+    } catch (e) { console.warn('Konfigurationsspalten', e); }
+  }
   if (route.bereich === 'rechte') return zeigeRechte(ziel, aktuell);
   if (route.bereich === 'migration') return zeigeMigration(ziel, aktuell);
   if (route.bereich === 'eingang') return zeigeEingang(ziel);
   return zeigeQueues(ziel);
 }
 
+let _spaltenGeprueft = false;
 const neuZeigen = () => zeige($('#hauptinhalt'), { seite: 'verwaltung', bereich: (location.hash.split('/')[2] || 'queues') }, () => true);
 
 // ── Start ─────────────────────────────────────────────────────────────────
@@ -72,6 +81,8 @@ const HINWEIS_GIENANTH = 'Sehr geehrte Damen und Herren,\n\nbitte verwenden Sie 
 function vorschlag() {
   const w = (kennung, domain, extra = {}) => ({ kennung, name: `Werk ${kennung}`, domains: domain ? [domain] : [], werk: kennung, ...standardNamen(kennung), modus: 'Ticket', aktiv: true, ...extra });
   return [
+    // SAP für alle Werke: erkannt am Stichwort im Betreff (vor der Domain), eigenes Team, SAP-Blau.
+    { kennung: 'SAP', name: 'SAP', domains: [], stichwoerter: ['SAP'], kategorie: 'SAP', farbe: SAP_BLAU, werk: '', ...standardNamen('SAP'), modus: 'Ticket', aktiv: true },
     w('DIHAG', 'dihag.com', { name: 'DIHAG' }),
     w('SCH', 'schmie-guss.de'),
     w('SHB', 'shb-guss.de'),
@@ -93,12 +104,12 @@ function zeigeQueues(ziel) {
       <div class="karte-kopfzeile"><h2>Queues</h2>
         <div class="knopfzeile">${qs.length ? '' : '<button class="knopf" data-aktion="v-vorschlag">Startaufstellung wie bisheriger Flow</button>'}<button class="knopf primaer" data-aktion="v-queue-neu">＋ Neue Queue</button></div></div>
       ${qs.length ? `<div class="tabelle-rahmen"><table class="daten">
-        <thead><tr><th>Kennung</th><th>Name</th><th>Modus</th><th>Domains</th><th>Werk</th><th>Bearbeiter-Gruppe</th><th>Zuständig bei Eingang</th><th>Liste</th><th></th></tr></thead>
+        <thead><tr><th>Kennung</th><th>Name</th><th>Modus</th><th>Erkennung</th><th>Werk</th><th>Bearbeiter-Gruppe</th><th>Zuständig bei Eingang</th><th>Liste</th><th></th></tr></thead>
         <tbody>${qs.map(q => `<tr class="${q.aktiv ? '' : 'inaktiv'}">
-          <td><strong>${esc(q.kennung)}</strong>${q.standard ? ' <span class="badge st-blau">Standard</span>' : ''}${q.aktiv ? '' : ' <span class="badge st-grau">aus</span>'}</td>
+          <td>${queuePill(q, true)}${q.standard ? ' <span class="badge st-blau">Standard</span>' : ''}${q.aktiv ? '' : ' <span class="badge st-grau">aus</span>'}</td>
           <td>${esc(q.name)}</td>
           <td>${esc(q.modus)}</td>
-          <td class="klein">${esc(q.domains.join(', ')) || '<span class="leise">–</span>'}</td>
+          <td class="klein">${q.stichwoerter.length ? `Betreff enthält <strong>${esc(q.stichwoerter.join(' / '))}</strong>${q.domains.length ? ' und ' : ''}` : ''}${esc(q.domains.join(', ')) || (q.stichwoerter.length ? '' : '<span class="leise">–</span>')}</td>
           <td>${esc(q.werk)}</td>
           <td class="klein">${esc(q.gruppe === '*' ? 'alle Bearbeiter-Gruppen' : q.gruppe) || '<span class="leise">–</span>'}</td>
           <td class="klein">${esc(q.bearbeiter.join(', ')) || '<span class="leise">–</span>'}</td>
@@ -108,15 +119,19 @@ function zeigeQueues(ziel) {
     </div>
     <div class="karte">
       <h2>Routing testen</h2>
-      <p class="leise">Welche Queue bekäme eine Mail von dieser Adresse? (Gleiche Regel wie im Flow: exakte Domain, sonst Standard-Queue.)</p>
-      <input type="email" class="suche" data-eingabe="v-routing" placeholder="max.muster@schmie-guss.de" aria-label="Absender testen"/>
+      <p class="leise">Welche Queue bekäme diese Mail? Gleiche Regel wie im Flow: Stichwort im Betreff (mit passender Domain vor ohne), sonst exakte Domain, sonst Standard-Queue.</p>
+      <div class="knopfzeile">
+        <input type="email" class="suche" id="v-routing-mail" data-eingabe="v-routing" placeholder="max.muster@schmie-guss.de" aria-label="Absender testen"/>
+        <input type="text" class="suche" id="v-routing-betreff" data-eingabe="v-routing" placeholder="Betreff, z. B. SAP Berechtigung" aria-label="Betreff testen"/>
+      </div>
       <div id="v-routing-ergebnis" class="routing-ergebnis"></div>
     </div>`;
 }
 
-aktion('v-routing', el => {
-  const q = queueFuerAbsender(zustand.queues, el.value);
-  $('#v-routing-ergebnis').innerHTML = !el.value.includes('@') ? '' : q
+aktion('v-routing', () => {
+  const mail = $('#v-routing-mail').value, betreff = $('#v-routing-betreff').value;
+  const q = queueFuerAbsender(zustand.queues, mail, betreff);
+  $('#v-routing-ergebnis').innerHTML = !mail.includes('@') && !betreff ? '' : q
     ? `→ <strong>${esc(q.kennung)}</strong> ${esc(q.name)} · ${q.modus === 'Hinweis' ? 'Hinweis-Mail, kein Ticket' : `Liste ${esc(q.liste)}${q.bearbeiter.length ? ', zugewiesen an ' + esc(q.bearbeiter.join(', ')) : ''}`}`
     : '<span class="rot">→ keine Queue (keine Standard-Queue) – der Flow meldet die Mail an den Admin</span>';
 });
@@ -145,6 +160,9 @@ async function queueDialog(alt) {
       <label>Liste<input name="liste" value="${esc(q.liste)}" ${gesperrt ? 'readonly' : ''} placeholder="Tickets-SCH (leer = Vorschlag)"/></label>
       <label>Bearbeiter-Gruppe<input name="gruppe" value="${esc(q.gruppe)}" placeholder="Tickets SCH – Bearbeiter (Archiv: * = alle)"/></label>
       <label class="breit">Absender-Domains (eine pro Zeile)<textarea name="domains" rows="3" placeholder="schmie-guss.de">${esc(q.domains.join('\n'))}</textarea></label>
+      <label class="breit">Stichwörter im Betreff (z. B. SAP; S/4HANA) – gehen vor der Domain. Mit Domains gilt die Queue nur für diese Absender.<input name="stichwoerter" value="${esc(q.stichwoerter.join('; '))}" placeholder="leer = nur nach Domain"/></label>
+      <label>Kategorie für neue Tickets<input name="kategorie" value="${esc(q.kategorie)}" placeholder="z. B. SAP"/></label>
+      <label>Kennfarbe<input type="color" name="farbe" value="${esc(q.farbe || '#5f6b7a')}"/></label>
       <div class="breit"><span>Zuständig bei Eingang (werden dem Ticket zugewiesen)</span>${personenwahl('bearbeiter', { vorbelegt: q.bearbeiter.map(m => ({ mail: m, name: m })) })}</div>
       <label class="breit">Hinweistext (nur Modus „Hinweis": Antwort statt Ticket)<textarea name="hinweis" rows="4">${esc(q.hinweis)}</textarea></label>
       <label class="check"><input type="checkbox" name="standard"${q.standard ? ' checked' : ''}/> Standard-Queue für unbekannte Domains</label>
@@ -177,6 +195,9 @@ async function queueDialog(alt) {
     liste: d.modus === 'Hinweis' ? '' : (String(d.liste || '').trim() || namen.liste),
     gruppe: d.modus === 'Ticket' ? (String(d.gruppe || '').trim() || namen.gruppe) : String(d.gruppe || '').trim(),
     domains: domainsAusText(d.domains),
+    stichwoerter: stichwoerterAusText(d.stichwoerter),
+    kategorie: String(d.kategorie || '').trim(),
+    farbe: d.farbe && d.farbe !== '#5f6b7a' ? d.farbe : '',
     bearbeiter: mailsAusText(leseAuswahl(d.bearbeiter).map(p => p.mail).join(';')),
     hinweis: String(d.hinweis || ''),
     standard: d.standard === 'on',
@@ -428,16 +449,16 @@ function zeigeEingang(ziel) {
     <h2>So kommen Mails ins System</h2>
     <ol class="schritte">
       <li>Mail an <strong>${esc(KONFIG.ticketPostfach)}</strong> → der Flow <em>Helpdesk v2</em> startet (≈ 1 Min.).</li>
-      <li>Steht eine Ticketnummer im Betreff (<code>[#SCH-12]</code>, auch alte „Neues Ticket: 123"), wird die Mail als <strong>Antwort</strong> an das Ticket gehängt, der Status ggf. wieder geöffnet und die Bearbeiter informiert.</li>
-      <li>Sonst: Queue nach Absender-Domain (sonst Standard-Queue) aus der Liste <code>${esc(KONFIG.konfigListe)}</code>. Modus „Hinweis" → nur Antwort-Mail.</li>
+      <li>Steht eine Ticketnummer im Betreff (<code>[#SCH-12]</code>, auch ohne Klammern wie „Bezug SCH-12" oder alt „Neues Ticket: 123"), wird die Mail als <strong>Antwort</strong> an dieses Ticket gehängt statt ein neues anzulegen – Status ggf. wieder offen, Bearbeiter informiert.</li>
+      <li>Sonst: Queue nach <strong>Stichwort im Betreff</strong> (z. B. SAP), dann Absender-Domain, sonst Standard-Queue – aus der Liste <code>${esc(KONFIG.konfigListe)}</code>. Modus „Hinweis" → nur Antwort-Mail.</li>
       <li>Ticket anlegen, „Erstellt von" = Melder, Zuständige zuweisen, Anhänge + Original-Mail (.eml) anhängen, Eingangsbestätigung mit <code>[#Nummer]</code> senden.</li>
     </ol>
     <p><a class="knopf primaer" href="flow/Helpdesk-v2.zip" download>Flow-Paket herunterladen (Helpdesk-v2.zip)</a> <a class="knopf" href="https://github.com/dfedorov12/tickets/blob/main/docs/EINRICHTUNG.md" target="_blank" rel="noopener">Anleitung</a></p>
     <p class="leise klein">Import: make.powerautomate.com → Meine Flows → Importieren → Paket (Legacy) → Verbindungen für ${esc(KONFIG.ticketPostfach)} (Office 365 Outlook + SharePoint) wählen, „Content Conversion" neu anlegen (ohne Anmeldung). Fehler meldet der Flow an ${esc(KONFIG.adminPostfach)}. Danach den alten Flow „Helpdesk" ausschalten – nie beide gleichzeitig.</p>
   </div>
   <div class="karte"><h2>Aktuelles Routing</h2>
-    <div class="tabelle-rahmen"><table class="daten"><thead><tr><th>Domain</th><th>Queue</th><th>Ergebnis</th><th>Zuständig</th></tr></thead><tbody>
-      ${qs.flatMap(q => (q.domains.length ? q.domains : [q.standard ? '(alle anderen)' : '(keine Domain)']).map(d => `<tr><td>${esc(d)}</td><td><strong>${esc(q.kennung)}</strong> ${esc(q.name)}</td><td>${q.modus === 'Hinweis' ? 'Hinweis-Mail' : `Ticket in ${esc(q.liste)}${q.listId ? '' : ' <span class="rot">(nicht eingerichtet)</span>'}`}</td><td class="klein">${esc(q.bearbeiter.join(', ')) || '–'}</td></tr>`)).join('')}
+    <div class="tabelle-rahmen"><table class="daten"><thead><tr><th>Erkennung</th><th>Queue</th><th>Ergebnis</th><th>Zuständig</th></tr></thead><tbody>
+      ${qs.flatMap(q => (q.stichwoerter.length ? [`Betreff „${q.stichwoerter.join('" / „')}"${q.domains.length ? ' + ' + q.domains.join(', ') : ''}`] : q.domains.length ? q.domains : [q.standard ? '(alle anderen)' : '(keine Domain)']).map(d => `<tr><td>${esc(d)}</td><td><strong>${esc(q.kennung)}</strong> ${esc(q.name)}</td><td>${q.modus === 'Hinweis' ? 'Hinweis-Mail' : `Ticket in ${esc(q.liste)}${q.listId ? '' : ' <span class="rot">(nicht eingerichtet)</span>'}`}</td><td class="klein">${esc(q.bearbeiter.join(', ')) || '–'}</td></tr>`)).join('')}
     </tbody></table></div>
     <p class="leise klein">Flow-Konto <strong>${esc(ctx.dienstkonto)}</strong> braucht Vollzugriff auf die Ticketlisten (wird beim Einrichten vergeben), damit es „Erstellt von" setzen und Antworten anhängen kann.</p>
   </div>`;
