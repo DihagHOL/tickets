@@ -16,7 +16,11 @@
   <!-- Clickjacking-Schutz: unsichtbar, bis js/rahmenschutz.js bestätigt, dass die Seite oben steht. -->
   <style id="rahmenschutz">body { display: none !important; }</style>
   <script src="js/rahmenschutz.js?v=1"></script>
-  <!-- MSAL selbst ausgeliefert (npm @azure/msal-browser 5.23.0) -->
+  <!-- MSAL selbst ausgeliefert (npm @azure/msal-browser 5.23.0). Diese Seite ist zugleich die
+       Redirect-URI der Anmeldung: js/anmeldeantwort.js reicht Antworten aus Anmelde-iframes
+       über die Redirect-Bridge an die App weiter. -->
+  <script src="vendor/msal-browser/5.23.0/msal-redirect-bridge.min.js"></script>
+  <script src="js/anmeldeantwort.js?v=1"></script>
   <script src="vendor/msal-browser/5.23.0/msal-browser.min.js"></script>
   <link rel="stylesheet" href="css/app.css?v=1"/>
   <script type="module" src="js/app.js?v=1"></script>

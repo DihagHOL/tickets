@@ -81,6 +81,11 @@ aktion('nutzermenue', async () => {
 });
 
 async function start() {
+  // Nur Rückkehrseite einer Anmeldung (Popup/iframe, js/anmeldeantwort.js) – App nicht starten.
+  if (window.__anmeldeantwort) {
+    $('#boot-text').textContent = window.__anmeldeantwort;
+    return;
+  }
   aktionenAktivieren();
   try {
     const k = await anmelden();

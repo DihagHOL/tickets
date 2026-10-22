@@ -312,6 +312,69 @@ const warte = ms => new Promise(r => setTimeout(r, ms));
   await ctx.close();
 }
 
+// ── 5) Rückkehr von der Anmeldung auf …/tickets/ (bestehende Redirect-URI) ──
+{
+  console.log('\nAnmelderückkehr (Redirect-URI = App-Adresse)');
+  const t = neuerTenant();
+  const { page, ctx, fehler } = await sitzung('anna.agent@dihag.com', t);
+  const state = art => Buffer.from(JSON.stringify({ id: 'kanal-' + art, meta: { interactionType: art } })).toString('base64url') + '|/tickets/';
+  await page.route(BASIS + 'alt/rahmen.html', r => r.fulfill({ contentType: 'text/html', body: '<!DOCTYPE html><title>alt</title>' }));
+  await page.route(BASIS + 'fremd.html', r => r.fulfill({ contentType: 'text/html', body: '<!DOCTYPE html><title>fremd</title>' }));
+  const iframe = (src, kanal) => page.evaluate(([src, kanal]) => new Promise(fertig => {
+    const bc = new BroadcastChannel(kanal);
+    let nachricht = null;
+    bc.onmessage = e => { nachricht = e.data; };
+    const f = document.createElement('iframe');
+    f.src = src;
+    f.onload = () => setTimeout(() => {
+      bc.close();
+      const w = f.contentWindow;
+      fertig({ nachricht, hash: w.location.hash, app: !w.document.getElementById('app')?.hidden, text: w.document.getElementById('boot-text')?.textContent });
+    }, 600);
+    document.body.appendChild(f);
+  }), [src, kanal]);
+
+  // a) neue App: Token-Erneuerung im unsichtbaren iframe → Bridge reicht die Antwort weiter
+  await page.goto(BASIS);
+  await page.waitForSelector('table.tickets');
+  const neu = await iframe(BASIS + '#code=c1&state=' + encodeURIComponent(state('silent')), 'kanal-silent');
+  ok(page.url().startsWith(BASIS) && !page.url().includes('code='), 'Anmelde-iframe löst die App nicht aus dem Rahmen');
+  ok(neu.nachricht?.v === 1 && /code=c1/.test(neu.nachricht.payload), 'iframe-Antwort per Redirect-Bridge an die App');
+  ok(!neu.hash.includes('code=') && !neu.app, `iframe: Code aus der Adresse entfernt, App startet dort nicht (${neu.text})`);
+
+  // b) alte App (/alt/, MSAL 2): Antwort bleibt stehen, MSAL 2 liest sie selbst
+  await page.goto(BASIS + 'alt/rahmen.html');
+  const alt = await iframe(BASIS + '#code=c2&state=' + encodeURIComponent(state('silent')), 'kanal-silent');
+  ok(page.url().endsWith('/alt/rahmen.html'), 'iframe der alten App bleibt im Rahmen');
+  ok(alt.nachricht === null && alt.hash.includes('code=c2') && !alt.app, 'alte App: Antwort bleibt für MSAL 2 in der Adresse, keine Bridge');
+
+  // c) Power-Automate-Einwilligung der alten App (Popup, Antwort im Query)
+  const signal = page.evaluate(() => new Promise(fertig => {
+    const bc = new BroadcastChannel('pa-oauth-callback');
+    bc.onmessage = e => { bc.close(); fertig(e.data); };
+  }));
+  const popup = await ctx.newPage();
+  await popup.goto(BASIS + '?code=c3&state=pa_consent_abc');
+  await popup.waitForFunction(() => /Einwilligung erteilt/.test(document.getElementById('boot-text')?.textContent));
+  const daten = await Promise.race([signal, warte(2000).then(() => null)]);
+  ok(daten?.fertig === true && !JSON.stringify(daten).includes('c3'), 'Einwilligung: Signal an die alte App, ohne Code');
+  ok(!popup.url().includes('code='), 'Einwilligung: Code aus der Adresse entfernt');
+  if (!popup.isClosed()) await popup.close();
+
+  // d) Anmeldung im selben Fenster: App startet normal (MSAL wertet die Antwort aus)
+  await page.goto(BASIS + '#code=c4&state=' + encodeURIComponent(state('redirect')));
+  await page.waitForSelector('table.tickets');
+  ok(true, 'Redirect-Antwort: App startet');
+
+  // e) Clickjacking-Schutz bleibt: ohne Anmeldeantwort wird die App aus jedem Rahmen gelöst
+  await page.goto(BASIS + 'fremd.html');
+  await page.evaluate(src => { const f = document.createElement('iframe'); f.src = src; document.body.appendChild(f); }, BASIS + '#/posteingang');
+  await page.waitForURL(u => !String(u).endsWith('fremd.html'), { timeout: 5000 }).catch(() => {});
+  ok(!page.url().endsWith('fremd.html'), 'App im fremden Rahmen löst sich heraus');
+  ok(fehler.length === 0, 'keine Skriptfehler' + (fehler.length ? ': ' + fehler.join(' | ') : ''));
+  await ctx.close();
+}
+
 await browser.close();
 server.close();
 console.log(`\n${rot ? '✗' : '✓'} ${gruen} grün, ${rot} rot`);

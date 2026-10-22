@@ -118,9 +118,9 @@ Mehrere Tickets zum selben Thema (z. B. ein ausgefallener Drucker, gemeldet von 
 
 ## Sicherheit der Web-App
 
-- MSAL 5 selbst ausgeliefert (`vendor/`), Anmeldung über `redirect.html`.
+- MSAL 5 selbst ausgeliefert (`vendor/`). Redirect-URI ist die App selbst (`…/tickets/`, in Entra schon eingetragen); `js/anmeldeantwort.js` ordnet Anmeldeantworten vor dem App-Start zu (eigenes Fenster → MSAL, Token-iframe → Redirect-Bridge, alte App → stehen lassen).
 - CSP `script-src 'self'` – keine Inline-Skripte, keine Inline-Handler (Aktionen per `data-aktion` und Delegation), keine fremden Skriptquellen.
-- Clickjacking-Schutz (`js/rahmenschutz.js`).
+- Clickjacking-Schutz (`js/rahmenschutz.js`): sichtbar nur ganz oben; im Rahmen nur mit Anmeldeantwort in der Adresse – dann bleibt die Seite unsichtbar und startet nicht.
 - Mail-HTML (Ticketbeschreibung) wird in einem inerten Dokument zerlegt und über eine **Positivliste** neu aufgebaut: keine Skripte, Event-Attribute, Stile, Rahmen oder nachgeladenen Bilder; Links nur http(s)/mailto, sonst Text.
 - Alle anderen Fremdwerte laufen durch `esc()`; Ticketnummern und Listen-IDs werden vor jeder Verwendung in URLs geprüft.
 - Keine Ticketdaten in `localStorage` (nur Filtereinstellungen in `sessionStorage`).
@@ -136,10 +136,11 @@ Mehrere Tickets zum selben Thema (z. B. ein ausgefallener Drucker, gemeldet von 
 
 | Pfad | Inhalt |
 |---|---|
-| `index.html`, `redirect.html`, `css/app.css` | Oberfläche |
+| `index.html`, `css/app.css` | Oberfläche |
 | `js/config.js` | feste Einstellungen (Tenant, Site, Postfach, Spalten, Status, SLA) |
 | `js/modell.js` | fachliche Logik ohne DOM: Nummern, Routing, Rechte-Soll/Abgleich, SLA, Kennzahlen |
 | `js/daten.js`, `js/api.js`, `js/auth.js` | Daten, Graph/SharePoint-REST, Anmeldung |
+| `js/anmeldeantwort.js`, `js/rahmenschutz.js` | Rückkehr von der Anmeldung, Clickjacking-Schutz (klassische Skripte vor dem App-Start) |
 | `js/einrichtung.js`, `js/kopie.js` | Listen/Gruppen/Rechte anlegen und abgleichen; Ticket kopieren (Weiterleiten, Migration) |
 | `js/ansicht-*.js` | Seiten |
 | `scripts/flow-paket.mjs` → `flow/Helpdesk-v2.zip` | Power-Automate-Flow (Quelle + Importpaket) |

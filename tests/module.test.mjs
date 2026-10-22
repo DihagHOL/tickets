@@ -60,8 +60,21 @@ ok(/frame-src 'self' https:\/\/login\.microsoftonline\.com/.test(csp), 'CSP: Anm
 for (const m of html.matchAll(/<script[^>]*src="([^"]+)"/g)) ok(!/^https?:/.test(m[1]), `Skript aus eigener Quelle: ${m[1]}`);
 ok(/<style id="rahmenschutz">/.test(html) && fs.existsSync(path.join(JS, 'rahmenschutz.js')), 'Clickjacking-Schutz eingebunden');
 ok(fs.existsSync(path.join(ROOT, 'vendor/msal-browser/5.23.0/msal-browser.min.js')), 'MSAL liegt im Repo');
-const redirect = fs.readFileSync(path.join(ROOT, 'redirect.html'), 'utf8');
-ok(/msal-redirect-bridge\.min\.js/.test(redirect) && /js\/redirect\.js/.test(redirect), 'redirect.html = MSAL-Bridge');
+
+// Anmeldung über die in Entra schon eingetragene Adresse …/tickets/ (keine eigene Rückkehrseite)
+const skripte = [...html.matchAll(/<script[^>]*src="([^"?]+)/g)].map(m => m[1]);
+const stelle = s => skripte.indexOf(s);
+ok(stelle('vendor/msal-browser/5.23.0/msal-redirect-bridge.min.js') >= 0
+  && stelle('vendor/msal-browser/5.23.0/msal-redirect-bridge.min.js') < stelle('js/anmeldeantwort.js')
+  && stelle('js/anmeldeantwort.js') < stelle('vendor/msal-browser/5.23.0/msal-browser.min.js')
+  && stelle('js/anmeldeantwort.js') < stelle('js/app.js'), `Redirect-Bridge und Anmeldeantwort laufen vor MSAL und App (${skripte.join(', ')})`);
+ok(!fs.existsSync(path.join(ROOT, 'redirect.html')), 'keine eigene Rückkehrseite (redirect.html) – sie wäre in Entra nicht eingetragen');
+ok(/redirectUri:\s*_basis\(\),/.test(quelle['auth.js']), 'auth.js: Redirect-URI = Adresse der App');
+ok(/window\.__anmeldeantwort/.test(quelle['app.js']), 'app.js startet nicht in Anmelde-Popup/-iframe');
+ok(/\[#\?&\]\(code\|error\)=/.test(quelle['rahmenschutz.js']), 'Rahmenschutz lässt das Anmelde-iframe im Rahmen');
+const altApp = fs.readFileSync(path.join(ROOT, 'alt', 'app.js'), 'utf8');
+ok(/ALT_REDIRECT_URI = new URL\('\.\.\/'/.test(altApp) && (altApp.match(/redirectUri = ALT_REDIRECT_URI/g) || []).length === 2,
+  'alte App: Redirect-URI = …/tickets/ (Anmeldung und Power-Automate-Einwilligung)');
 
 // Fremdes HTML nie direkt per innerHTML (Beschreibung läuft über sicheresHtml)
 ok(!/innerHTML\s*[+]?=\s*[^;]*\.beschreibung/.test(quelle['ansicht-ticket.js']), 'Beschreibung nie direkt als innerHTML');

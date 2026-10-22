@@ -2,11 +2,11 @@
  * Anmeldung (Microsoft Entra ID) mit MSAL.js 5
  * ============================================
  * msal-browser 5.23.0 wird selbst ausgeliefert (vendor/msal-browser/), keine fremde
- * Skriptquelle. Die Antwort von Microsoft landet auf redirect.html („Redirect-Bridge")
- * und wird von dort an die App weitergereicht. Muster aus dem Regelwerk-Management.
- *
- * Einmalig in Entra (App-Registrierung „Tickets", SPA-Plattform) eintragen:
- *   https://dfedorov12.github.io/tickets/redirect.html
+ * Skriptquelle. Redirect-URI ist die App selbst – die Adresse, die in Entra schon für die
+ * bisherige App eingetragen ist (SPA-Plattform, keine Änderung nötig):
+ *   https://dfedorov12.github.io/tickets/
+ * Anmeldung im selben Fenster wertet handleRedirectPromise() aus; Antworten aus dem
+ * unsichtbaren Token-iframe reicht js/anmeldeantwort.js über die Redirect-Bridge weiter.
  */
 import { KONFIG } from './config.js';
 
@@ -32,7 +32,7 @@ export async function anmelden() {
     auth: {
       clientId: KONFIG.clientId,
       authority: `https://login.microsoftonline.com/${KONFIG.tenantId}`,
-      redirectUri: _basis() + 'redirect.html',
+      redirectUri: _basis(),
       postLogoutRedirectUri: _basis(),
     },
     // localStorage: Ein Klick auf einen Ticket-Link in Outlook öffnet einen neuen Tab –
@@ -49,8 +49,12 @@ export async function anmelden() {
   // Pfad auf DIESER Seite – „//host" wäre für den Browser eine fremde Adresse.
   if (antwort && typeof antwort.state === 'string' && /^\/(?![\/\\])/.test(antwort.state)
       && antwort.state !== location.pathname + location.search + location.hash) {
-    location.replace(antwort.state);
-    return null;
+    const ziel = new URL(antwort.state, location.origin);
+    if (ziel.pathname !== location.pathname || ziel.search !== location.search) {
+      location.replace(antwort.state);
+      return null;
+    }
+    history.replaceState(null, '', antwort.state); // nur die Route (#/…) fehlt – ohne Neuladen
   }
 
   if (!_konto) _konto = _msal.getActiveAccount() || _msal.getAllAccounts()[0] || null;

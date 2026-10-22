@@ -17,6 +17,8 @@ const CLIENT_ID   = '75e627e8-2de0-4ec6-bec9-311757b89e08';
 const TENANT_ID   = 'fdb70646-023a-403b-a4b9-1f474a935123';
 const SCOPES      = ['User.Read','Sites.Read.All','Sites.ReadWrite.All','Files.ReadWrite.All','Mail.Send'];
 const TICKET_SITE = 'dihag.sharepoint.com:/sites/ticket';
+// Die alte App liegt jetzt unter /alt/; registriert ist in Entra die bisherige Adresse.
+const ALT_REDIRECT_URI = new URL('../', location.href.split('?')[0].split('#')[0]).href;
 
 // ════════════════════════════════════════════════════════════════
 // HELPERS
@@ -182,8 +184,9 @@ function toast(msg,type='info'){
 let msalApp, account;
 
 async function initAuth() {
-  // Use current page as redirectUri so it works locally, from GitHub Pages, or anywhere
-  const redirectUri = window.location.href.split('?')[0].split('#')[0];
+  // Rückkehr auf die in Entra eingetragene Adresse …/tickets/ (die neue App lässt
+  // Antworten für MSAL 2 dort stehen, siehe js/anmeldeantwort.js)
+  const redirectUri = ALT_REDIRECT_URI;
   const cfg = {
     auth:{ clientId:CLIENT_ID, authority:`https://login.microsoftonline.com/${TENANT_ID}`,
            redirectUri },
@@ -2307,9 +2310,9 @@ async function getFlowToken() {
 }
 
 async function _paConsentPopup(tenantId) {
-  const redirectUri = window.location.href.split('?')[0].split('#')[0];
-  // Eindeutiger State mit Präfix — die IIFE oben erkennt diesen und setzt _paConsentPopup=true,
-  // sodass die Boot-IIFE die App NICHT initialisiert, sondern nur "Erledigt" zeigt und schließt.
+  const redirectUri = ALT_REDIRECT_URI;
+  // Eindeutiger State mit Präfix — js/anmeldeantwort.js der neuen App erkennt ihn, meldet
+  // sich über den BroadcastChannel und schließt das Popup.
   const state = 'pa_consent_' + Math.random().toString(36).slice(2);
 
   const authUrl = 'https://login.microsoftonline.com/' + tenantId + '/oauth2/v2.0/authorize'
