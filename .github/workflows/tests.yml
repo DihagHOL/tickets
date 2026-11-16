@@ -1,12 +1,21 @@
-# Tests: Modell, statische Modulprüfung, Flow-Paket (Struktur + Ausdrücke), Nachtlauf-Probelauf.
-# Ohne Abhängigkeiten, ohne Tenant. Der Browser-Rundgang (e2e/rundgang.mjs) läuft lokal.
+# Tests und Veröffentlichung.
+#
+# Tests: Modell, statische Modulprüfung, Flow-Paket (Struktur + Ausdrücke), Nachtlauf-Probelauf
+# und die Verdrahtung der Seite (tests/seite.test.mjs). Ohne Abhängigkeiten, ohne Tenant.
+# Der Browser-Rundgang (e2e/rundgang.mjs) läuft lokal.
+#
+# Veröffentlichung: nur für main und nur nach grünen Tests. Ein roter Test hält sie auf, die
+# Seite bleibt dann auf dem letzten guten Stand. Hochgeladen werden allein die Dateien der
+# Seite samt alter App (alt/) und Flow-Paket (flow/). Doku, Tests und Skripte bleiben im
+# Repository. Bis zum 16.11.2026 lief hier die Jekyll-Vorlage und veröffentlichte alles.
 name: Tests
 
 on:
   push:
   pull_request:
-  workflow_dispatch: {}
+  workflow_dispatch: {}   # manueller Lauf über den Actions-Tab, veröffentlicht main neu
 
+# Nur lesen: Der Lauf braucht keine Schreibrechte am Repository.
 permissions:
   contents: read
 
@@ -20,3 +29,42 @@ jobs:
           node-version: 22
       - name: Testsuiten
         run: node scripts/test.mjs
+
+  veroeffentlichen:
+    needs: tests
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Nur dieser Job darf veröffentlichen, und nur das.
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    # Zwei Pushes kurz nacheinander: nacheinander veröffentlichen, keinen Lauf abbrechen.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
+
+      # Ohne das lädt ein Browser nach einer Änderung weiter die alten Dateien.
+      - name: "Versionsparameter ?v=… auf den Commit setzen"
+        run: |
+          SHA="${GITHUB_SHA::8}"
+          sed -i -E "s/\?v=[A-Za-z0-9._-]+/?v=$SHA/g" index.html
+
+      # Nur was die Seite braucht. Alles andere bleibt im Repository.
+      - name: Dateien der Seite zusammenstellen
+        run: |
+          mkdir _site
+          cp -r index.html assets css js vendor alt flow _site/
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9   # v5.0.0
+        with:
+          path: _site
+
+      - name: Veröffentlichen
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346   # v5.0.1

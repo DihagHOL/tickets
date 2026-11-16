@@ -60,7 +60,6 @@ async function sitzung(mail, tenant) {
   page.on('pageerror', e => fehler.push(e.message));
   page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) fehler.push(m.text()); });
   await page.route('**/vendor/msal-browser/5.23.0/msal-browser.min.js', r => r.fulfill({ contentType: 'text/javascript', body: MSAL(mail) }));
-  await page.route('https://fonts.googleapis.com/**', r => r.fulfill({ contentType: 'text/css', body: '' }));
   const api = async r => {
     const req = r.request();
     let body;

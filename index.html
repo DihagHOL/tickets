@@ -7,14 +7,38 @@
   <!-- Sicherheit: Skripte nur aus eigenen Dateien (keine Inline-Handler, kein fremdes CDN);
        Daten fließen nur zu Anmeldung, Graph und SharePoint. Mail-Inhalte werden zusätzlich
        über eine Positivliste bereinigt (js/html.js). -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://graph.microsoft.com https://login.microsoftonline.com https://*.sharepoint.com; frame-src 'self' https://login.microsoftonline.com; object-src 'none'; base-uri 'self'; form-action 'self'"/>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://graph.microsoft.com https://login.microsoftonline.com https://*.sharepoint.com; frame-src 'self' https://login.microsoftonline.com; object-src 'none'; base-uri 'self'; form-action 'self'"/>
   <meta name="referrer" content="strict-origin-when-cross-origin"/>
   <title>DIHAG · Tickets</title>
   <link rel="icon" type="image/png" href="assets/dihag-zeichen.png"/>
-  <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link href="https://fonts.googleapis.com/css2?family=Exo:wght@400;500;600;700&display=swap" rel="stylesheet"/>
   <!-- Clickjacking-Schutz: unsichtbar, bis js/rahmenschutz.js bestätigt, dass die Seite oben steht. -->
   <style id="rahmenschutz">body { display: none !important; }</style>
+  <!-- Vorladen: Die Sicherheitsrichtlinie oben schaltet in Chrome das vorausschauende Laden ab.
+       Ohne diese Hinweise holt der Browser die Skripte am Seitenende einzeln nacheinander.
+       Jede Adresse steht hier aufs Zeichen so wie im Tag weiter unten. -->
+  <link rel="preload" as="style" href="css/app.css?v=1"/>
+  <link rel="preload" as="script" href="js/rahmenschutz.js?v=1"/>
+  <link rel="preload" as="script" href="vendor/msal-browser/5.23.0/msal-redirect-bridge.min.js"/>
+  <link rel="preload" as="script" href="js/anmeldeantwort.js?v=1"/>
+  <link rel="preload" as="script" href="vendor/msal-browser/5.23.0/msal-browser.min.js"/>
+  <link rel="modulepreload" href="js/app.js?v=1"/>
+  <link rel="modulepreload" href="js/ansicht-berichte.js"/>
+  <link rel="modulepreload" href="js/ansicht-liste.js"/>
+  <link rel="modulepreload" href="js/ansicht-neu.js"/>
+  <link rel="modulepreload" href="js/ansicht-ticket.js"/>
+  <link rel="modulepreload" href="js/ansicht-verwaltung.js"/>
+  <link rel="modulepreload" href="js/api.js"/>
+  <link rel="modulepreload" href="js/auth.js"/>
+  <link rel="modulepreload" href="js/config.js"/>
+  <link rel="modulepreload" href="js/daten.js"/>
+  <link rel="modulepreload" href="js/einrichtung.js"/>
+  <link rel="modulepreload" href="js/html.js"/>
+  <link rel="modulepreload" href="js/kopie.js"/>
+  <link rel="modulepreload" href="js/mails.js"/>
+  <link rel="modulepreload" href="js/modell.js"/>
+  <link rel="modulepreload" href="js/personenwahl.js"/>
+  <link rel="modulepreload" href="js/text.js"/>
+  <link rel="modulepreload" href="js/ui.js"/>
   <script src="js/rahmenschutz.js?v=1"></script>
   <!-- MSAL selbst ausgeliefert (npm @azure/msal-browser 5.23.0). Diese Seite ist zugleich die
        Redirect-URI der Anmeldung: js/anmeldeantwort.js reicht Antworten aus Anmelde-iframes
@@ -22,6 +46,7 @@
   <script src="vendor/msal-browser/5.23.0/msal-redirect-bridge.min.js"></script>
   <script src="js/anmeldeantwort.js?v=1"></script>
   <script src="vendor/msal-browser/5.23.0/msal-browser.min.js"></script>
+  <link rel="preload" as="font" type="font/woff2" href="assets/fonts/exo-latin.woff2" crossorigin/>
   <link rel="stylesheet" href="css/app.css?v=1"/>
   <script type="module" src="js/app.js?v=1"></script>
 </head>

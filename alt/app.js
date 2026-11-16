@@ -1654,8 +1654,7 @@ function openTicketNewTab(id) {
   const html=`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Ticket #${id} — ${esc(f[cTitle]||'')}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="${new URL('schrift.css', location.href).href}"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:Inter,sans-serif;background:#f2f4f7;color:#1a2942;min-height:100vh;}
