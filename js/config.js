@@ -29,7 +29,7 @@ export const KONFIG = Object.freeze({
   ticketPostfach: 'ticket@dihag.com',
   // Empfänger für Fehlermeldungen des Flows und den Rechtebericht des Nachtlaufs.
   adminPostfach: 'administrator@dihag.com',
-  appUrl: 'https://dfedorov12.github.io/tickets/',
+  appUrl: 'https://dihaghol.github.io/tickets/',
   // Eigene Berechtigungsstufe der Bearbeiter: „Mitwirken" + „Listenverhalten außer
   // Kraft setzen" (sieht alle Tickets der Liste trotz „nur eigene Elemente") –
   // ohne Löschen. Wird bei der Einrichtung angelegt.

@@ -11,8 +11,8 @@ Ticketsystem der DIHAG-IT auf GitHub Pages – Daten in SharePoint (`/sites/tick
 
 | | |
 |---|---|
-| App | https://dfedorov12.github.io/tickets/ |
-| Alte App (Übergang) | https://dfedorov12.github.io/tickets/alt/ |
+| App | https://dihaghol.github.io/tickets/ |
+| Alte App (Übergang) | https://dihaghol.github.io/tickets/alt/ |
 | Einrichtung | [docs/EINRICHTUNG.md](docs/EINRICHTUNG.md) |
 | Architektur & Rechtemodell | [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md) |
 | Flow-Paket | [flow/Helpdesk-v2.zip](flow/Helpdesk-v2.zip) (Quelle: `scripts/flow-paket.mjs`) |

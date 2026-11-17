@@ -2,7 +2,7 @@
 // Rückkehr von der Microsoft-Anmeldung
 // ====================================
 // Neue und alte App (/alt/) nutzen die Redirect-URI, die in Entra schon eingetragen ist:
-// https://dfedorov12.github.io/tickets/ – also diese Seite. Steht eine Anmeldeantwort in
+// https://dihaghol.github.io/tickets/ – also diese Seite. Steht eine Anmeldeantwort in
 // der Adresse (state + code/error), entscheidet dieses Skript vor dem App-Start, wem sie
 // gehört:
 //   redirect      Anmeldung der App im selben Fenster – wertet MSAL in js/auth.js aus.

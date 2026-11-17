@@ -7,7 +7,7 @@ Die alte App bleibt unter `/tickets/alt/` erreichbar, der alte Flow bleibt bis z
 
 ## A · Entra ID (nur prüfen, ~2 Min.)
 
-**Keine neue Umleitungs-URI nötig.** Neue und alte App melden sich über die Adresse an, die für die bisherige App schon eingetragen ist: App-Registrierung `75e627e8-2de0-4ec6-bec9-311757b89e08` → **Authentifizierung → Single-Page-Anwendung** → `https://dfedorov12.github.io/tickets/`.
+**Keine neue Umleitungs-URI nötig.** Neue und alte App melden sich über die Adresse an, die für die bisherige App schon eingetragen ist: App-Registrierung `75e627e8-2de0-4ec6-bec9-311757b89e08` → **Authentifizierung → Single-Page-Anwendung** → `https://dihaghol.github.io/tickets/`.
 
 Wie das ohne eigene Rückkehrseite geht: Die Startseite erkennt Anmeldeantworten selbst (`js/anmeldeantwort.js`) – Anmeldung im selben Fenster wertet MSAL aus, Antworten aus dem unsichtbaren Token-iframe gibt sie per Redirect-Bridge an die App weiter, und Popups/iframes der alten App unter `/alt/` (MSAL 2, Power-Automate-Einwilligung) lässt sie für diese stehen.
 
@@ -21,7 +21,7 @@ Wie das ohne eigene Rückkehrseite geht: Die Startseite erkennt Anmeldeantworten
 
 ## B · In der App einrichten (Websitebesitzer der Site `/sites/ticket`)
 
-Nach dem Merge nach `main` ist die App unter `https://dfedorov12.github.io/tickets/` live. Als **Websitebesitzer** anmelden → Menü **Verwaltung**.
+Nach dem Merge nach `main` ist die App unter `https://dihaghol.github.io/tickets/` live. Als **Websitebesitzer** anmelden → Menü **Verwaltung**.
 
 1. **Konfigurationsliste anlegen** – legt `TicketQueues` an (eine Zeile je Queue; der Flow liest sie).
 2. **Queues & Routing → „Startaufstellung wie bisheriger Flow"** – legt an:
@@ -122,7 +122,7 @@ SharePoint erlaubt Rechte-Abfragen app-only **nur mit Zertifikat** (ein Client-S
 
 ## E · Go-live-Checkliste
 
-- [ ] Entra geprüft: Umleitungs-URI `https://dfedorov12.github.io/tickets/` (SPA) vorhanden, Berechtigungen erteilt (A)
+- [ ] Entra geprüft: Umleitungs-URI `https://dihaghol.github.io/tickets/` (SPA) vorhanden, Berechtigungen erteilt (A)
 - [ ] Alle Ticket-Queues **eingerichtet**, Prüfung zeigt überall ✓ (B)
 - [ ] Bearbeiter-Gruppen gefüllt (auch **SAP**); jede Bearbeiterin sieht ihren Posteingang
 - [ ] Routing-Test: Betreff mit „SAP" landet in SAP, sonst im Werk
@@ -139,7 +139,7 @@ SharePoint erlaubt Rechte-Abfragen app-only **nur mit Zertifikat** (ein Client-S
 
 | Symptom | Ursache / Lösung |
 |---|---|
-| Anmeldung: `AADSTS50011` (Redirect-URI passt nicht) | In Entra steht die Adresse anders (z. B. mit `index.html`) – `https://dfedorov12.github.io/tickets/` als SPA-URI ergänzen (A) |
+| Anmeldung: `AADSTS50011` (Redirect-URI passt nicht) | In Entra steht die Adresse anders (z. B. mit `index.html`) – `https://dihaghol.github.io/tickets/` als SPA-URI ergänzen (A) |
 | Seite bleibt bei „Anmeldung wird abgeschlossen …" | Rückkehr aus einem Anmelde-Popup der alten App, das sich nicht geschlossen hat – Fenster schließen, App neu öffnen |
 | „Einrichten" → 403 | Nicht Websitebesitzer, oder SharePoint-Recht `AllSites.FullControl` ohne Zustimmung |
 | Spalte wurde nicht kopiert | Protokoll zeigt `⚠ Spalte …` – meist verwaltete Metadaten/Lookup auf gelöschte Liste; von Hand ergänzen |

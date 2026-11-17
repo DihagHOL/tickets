@@ -615,7 +615,7 @@
                     "parameters": {
                       "emailMessage/To": "@outputs('Empfaenger')",
                       "emailMessage/Subject": "Neue Antwort zu [#@{outputs('Ticketnummer')}] @{body('Ticket_lesen')?['Title']}",
-                      "emailMessage/Body": "<p><b>@{outputs('Absender')}</b> hat auf das Ticket <b>@{outputs('Ticketnummer')}</b> geantwortet:</p><blockquote>@{replace(outputs('Antworttext'), decodeUriComponent('%0A'), '<br>')}</blockquote><p><a href=\"https://dfedorov12.github.io/tickets/#/t/@{outputs('Ticketnummer')}\">Ticket in der App öffnen</a> – bitte dort antworten, damit der Melder die Nachricht bekommt.</p>",
+                      "emailMessage/Body": "<p><b>@{outputs('Absender')}</b> hat auf das Ticket <b>@{outputs('Ticketnummer')}</b> geantwortet:</p><blockquote>@{replace(outputs('Antworttext'), decodeUriComponent('%0A'), '<br>')}</blockquote><p><a href=\"https://dihaghol.github.io/tickets/#/t/@{outputs('Ticketnummer')}\">Ticket in der App öffnen</a> – bitte dort antworten, damit der Melder die Nachricht bekommt.</p>",
                       "emailMessage/Importance": "Normal"
                     },
                     "authentication": "@parameters('$authentication')"
@@ -1471,7 +1471,7 @@
                   "parameters": {
                     "messageId": "@triggerOutputs()?['body/id']",
                     "replyParameters/Subject": "[#@{outputs('Nummer')}] Eingangsbestätigung: @{outputs('Betreff')}",
-                    "replyParameters/Body": "<p>Liebe Kollegin, lieber Kollege,</p><p>Ihre Anfrage ist als Ticket <b>@{outputs('Nummer')}</b> bei der IT eingegangen und wird schnellstmöglich bearbeitet.</p><p><a href=\"https://dfedorov12.github.io/tickets/#/t/@{outputs('Nummer')}\">Ticket ansehen</a> – dort finden Sie jederzeit den aktuellen Stand unter „Meine Anfragen\".</p><p>Möchten Sie etwas ergänzen? Antworten Sie einfach auf diese Mail; die Nummer im Betreff ordnet Ihre Antwort dem Ticket zu.</p><p>Vielen Dank!<br>Ihr IT-Team</p>",
+                    "replyParameters/Body": "<p>Liebe Kollegin, lieber Kollege,</p><p>Ihre Anfrage ist als Ticket <b>@{outputs('Nummer')}</b> bei der IT eingegangen und wird schnellstmöglich bearbeitet.</p><p><a href=\"https://dihaghol.github.io/tickets/#/t/@{outputs('Nummer')}\">Ticket ansehen</a> – dort finden Sie jederzeit den aktuellen Stand unter „Meine Anfragen\".</p><p>Möchten Sie etwas ergänzen? Antworten Sie einfach auf diese Mail; die Nummer im Betreff ordnet Ihre Antwort dem Ticket zu.</p><p>Vielen Dank!<br>Ihr IT-Team</p>",
                     "replyParameters/ReplyAll": true,
                     "replyParameters/Importance": "Normal"
                   },
@@ -1518,7 +1518,7 @@
                       "parameters": {
                         "emailMessage/To": "@outputs('Ziel')?['Bearbeiter']",
                         "emailMessage/Subject": "Neues Ticket @{outputs('Nummer')}: @{outputs('Betreff')}",
-                        "emailMessage/Body": "<p>Neues Ticket in der Queue <b>@{outputs('Ziel')?['Title']}</b> von @{outputs('Absender')}:</p><p><b>@{outputs('Betreff')}</b></p><p>@{triggerOutputs()?['body/bodyPreview']}</p><p><a href=\"https://dfedorov12.github.io/tickets/#/t/@{outputs('Nummer')}\">Ticket öffnen</a></p>",
+                        "emailMessage/Body": "<p>Neues Ticket in der Queue <b>@{outputs('Ziel')?['Title']}</b> von @{outputs('Absender')}:</p><p><b>@{outputs('Betreff')}</b></p><p>@{triggerOutputs()?['body/bodyPreview']}</p><p><a href=\"https://dihaghol.github.io/tickets/#/t/@{outputs('Nummer')}\">Ticket öffnen</a></p>",
                         "emailMessage/Importance": "@{if(equals(triggerOutputs()?['body/importance'], 'high'), 'High', 'Normal')}"
                       },
                       "authentication": "@parameters('$authentication')"

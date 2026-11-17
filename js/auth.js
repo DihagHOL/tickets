@@ -4,7 +4,7 @@
  * msal-browser 5.23.0 wird selbst ausgeliefert (vendor/msal-browser/), keine fremde
  * Skriptquelle. Redirect-URI ist die App selbst – die Adresse, die in Entra schon für die
  * bisherige App eingetragen ist (SPA-Plattform, keine Änderung nötig):
- *   https://dfedorov12.github.io/tickets/
+ *   https://dihaghol.github.io/tickets/
  * Anmeldung im selben Fenster wertet handleRedirectPromise() aus; Antworten aus dem
  * unsichtbaren Token-iframe reicht js/anmeldeantwort.js über die Redirect-Bridge weiter.
  */

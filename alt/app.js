@@ -298,7 +298,7 @@ async function requestAccess() {
   <tr><td style="padding:4px 12px 4px 0;color:#666">App</td><td>Ticketsystem</td></tr>
   <tr><td style="padding:4px 12px 4px 0;color:#666">Datum</td><td>${now}</td></tr>
 </table>
-<p style="margin-top:16px">Freigabe im <a href="https://dfedorov12.github.io/admin/">Admin-Portal</a> erteilen.</p>
+<p style="margin-top:16px">Freigabe im <a href="https://dihaghol.github.io/admin/">Admin-Portal</a> erteilen.</p>
 <p style="color:#888;font-size:12px">Diese Nachricht wurde automatisch vom DIHAG Ticketsystem gesendet.</p>`
         },
         toRecipients: [{ emailAddress: { address: 'ticket@dihag.com' } }]
@@ -1235,7 +1235,7 @@ async function sendMentionNotifications(mentions, ticketId, commentText) {
   const _tCol       = getCol('title') || 'Title';
   const ticketTitle = ticket?.fields?.[_tCol] || '';
   const senderName  = account?.name || 'Ticketsystem';
-  const ticketUrl   = 'https://dfedorov12.github.io/tickets/';
+  const ticketUrl   = 'https://dihaghol.github.io/tickets/';
   // Direct SharePoint link to the ticket item (DispForm)
   const spTicketUrl = ticketListId
     ? `https://dihag.sharepoint.com/sites/ticket/_layouts/15/listform.aspx?PageType=4&ListId={${ticketListId}}&ID=${ticketId}`
